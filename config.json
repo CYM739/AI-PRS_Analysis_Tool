@@ -1,0 +1,11 @@
+{
+    "last_output_path": "C:/Max/Personal/Github/AI-PRS webUI_V2",
+    "output_path": "D:\\Max\\Github\\AI-PRS webui_V2 TEST",
+    "multi_opt_tolerance": 0.1,
+    "multi_opt_grid_points": 20,
+    "multi_opt_weights": {
+        "model_1": 0.5,
+        "model_2": 0.5,
+        "total_dosage": 0.1
+    }
+}
