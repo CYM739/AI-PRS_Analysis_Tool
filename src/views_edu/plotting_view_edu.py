@@ -46,7 +46,11 @@ def render():
 
     # --- 繪製圖表 ---
     st.subheader("3D 反應曲面圖")
-    
+
+    with st.expander("🎨 自訂圖表外觀"):
+        axis_title_font_size = st.slider("軸標題字體大小", min_value=8, max_value=24, value=12, key="edu_plot_axis_title_font")
+        axis_tick_font_size = st.slider("軸刻度字體大小 (數字)", min_value=8, max_value=24, value=10, key="edu_plot_axis_tick_font")
+        
     # 準備繪圖參數，許多參數使用預設值以簡化介面
     plot_parameters = {
         'x_var': x_var,
@@ -56,6 +60,8 @@ def render():
         'variable_descriptions': st.session_state.variable_descriptions,
         'show_actual_data': True, # 預設顯示實際數據點
         'colorscale_1': 'Viridis', # 預設色盤
+        'axis_title_font_size': axis_title_font_size,
+        'axis_tick_font_size': axis_tick_font_size
     }
     
     # 直接呼叫與專業版相同的繪圖函式
