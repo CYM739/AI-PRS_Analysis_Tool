@@ -96,6 +96,7 @@ def render():
                 custom_y_title = ax_c2.text_input("Y-axis Title", placeholder="Leave blank for default")
                 custom_z_title = ax_c3.text_input("Z-axis Title", placeholder="Leave blank for default")
                 axis_title_font_size = st.slider("Axis Title Font Size", min_value=8, max_value=24, value=12, key="main_plot_3d_axis_font")
+                axis_tick_font_size = st.slider("Axis Tick Label Font Size (Numbers)", min_value=8, max_value=24, value=10, key="main_plot_3d_axis_tick_font")
                 
                 st.write("**Z-Axis Range**")
                 z_c1, z_c2 = st.columns(2)
@@ -134,7 +135,9 @@ def render():
                 'z_range': z_range,
                 'show_x_grid': show_x_grid,
                 'show_y_grid': show_y_grid,
-                'axis_title_font_size': axis_title_font_size
+                'axis_title_font_size': axis_title_font_size,
+                'axis_tick_font_size': axis_tick_font_size,
+                'download_scale': download_scale
             }
             plot_config = {'toImageButtonOptions': {'format': 'png','filename': f'{model_to_plot_1}_surface_plot','height': 700,'width': 700,'scale': download_scale}}
             display_surface_plot(plot_parameters, plot_config)
