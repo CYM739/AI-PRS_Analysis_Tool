@@ -250,12 +250,12 @@ def render_bopt_2d_plot(model_name, dosages_dict):
 def render_bopt_3d_plot(model_name, dosages_dict):
     """Renders the 3D plot for AI optimization results."""
     st.write(f"Plotting surface for **{model_name}** with the AI-optimized point.")
-    viz_c1_bopt, viz_c2_bopt = st.columns(2)
+    viz_c1, viz_c2 = st.columns(2)
     formatted_vars_viz_bopt = format_variable_options(st.session_state.independent_vars)
-    x_var_viz_formatted_bopt = viz_c1_bopt.selectbox("X-axis variable", options=formatted_vars_viz_bopt, key="bopt_viz_x")
+    x_var_viz_formatted_bopt = viz_c1.selectbox("X-axis variable", options=formatted_vars_viz_bopt, key="bopt_viz_x")
     x_var_viz_bopt = x_var_viz_formatted_bopt.split(":")[0]
     y_options_viz_formatted_bopt = [v for v in formatted_vars_viz_bopt if not v.startswith(x_var_viz_bopt)]
-    y_var_viz_formatted_bopt = viz_c2_bopt.selectbox("Y-axis variable", options=y_options_viz_formatted_bopt, key="bopt_viz_y")
+    y_var_viz_formatted_bopt = viz_c2.selectbox("Y-axis variable", options=y_options_viz_formatted_bopt, key="bopt_viz_y")
     y_var_viz_bopt = y_var_viz_formatted_bopt.split(":")[0]
     fixed_vars_for_plot_bopt = {k: v for k, v in dosages_dict.items() if k not in [x_var_viz_bopt, y_var_viz_bopt]}
 
@@ -268,10 +268,22 @@ def render_bopt_3d_plot(model_name, dosages_dict):
 
     with st.expander("🎨 Customize Plot Appearance"):
         st.write("**Z-Axis Range**")
-        z_c1, z_c2 = st.columns(2)
-        z_min = z_c1.number_input("Min Z Value", value=float(st.session_state.exp_df[model_name].min()), key="bopt_z_min")
-        z_max = z_c2.number_input("Max Z Value", value=float(st.session_state.exp_df[model_name].max()), key="bopt_z_max")
-        z_range = [z_min, z_max]
+        enable_z_limit_bopt = st.checkbox("Set Manual Z-Axis Range", value=False, key="bopt_z_manual")
+        z_range = None
+        if enable_z_limit_bopt:
+            z_c1, z_c2 = st.columns(2)
+            default_min = float(st.session_state.exp_df[model_name].min())
+            default_max = float(st.session_state.exp_df[model_name].max())
+            z_min = z_c1.number_input("Min Z Value", value=default_min, key="bopt_z_min")
+            z_max = z_c2.number_input("Max Z Value", value=default_max, key="bopt_z_max")
+            z_range = [z_min, z_max]
+
+        st.write("---")
+        st.write("**Surface Grid Lines**")
+        g_c1, g_c2, g_c3 = st.columns(3)
+        show_x_grid_bopt = g_c1.checkbox("Show X-axis grid", value=True, key="bopt_show_x_grid")
+        show_y_grid_bopt = g_c2.checkbox("Show Y-axis grid", value=True, key="bopt_show_y_grid")
+        show_surface_grid_bopt = g_c3.checkbox("Show Surface Grid (Wireframe)", value=True, key="bopt_show_surface_grid")
 
     plot_params_viz_bopt = {
         'x_var': x_var_viz_bopt, 'y_var': y_var_viz_bopt,
@@ -280,7 +292,10 @@ def render_bopt_3d_plot(model_name, dosages_dict):
         'variable_descriptions': st.session_state.variable_descriptions,
         'optimized_point': dosages_dict,
         'show_actual_data': False,
-        'z_range': z_range
+        'z_range': z_range,
+        'show_x_grid': show_x_grid_bopt,
+        'show_y_grid': show_y_grid_bopt,
+        'show_surface_grid': show_surface_grid_bopt
     }
     display_surface_plot(plot_params_viz_bopt)
 
