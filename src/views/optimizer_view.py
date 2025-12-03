@@ -535,15 +535,22 @@ def render_3d_result_plot(model_to_plot_viz, optimized_dosages_dict):
         point_symbol_1_viz = p1_c2.selectbox("Symbol", options=marker_symbols, key="viz_point_symbol_1", index=0)
         
         st.write("**Z-Axis Range**")
-        z_c1, z_c2 = st.columns(2)
-        z_min = z_c1.number_input("Min Z Value", value=float(st.session_state.exp_df[model_to_plot_viz].min()), key="opt_z_min")
-        z_max = z_c2.number_input("Max Z Value", value=float(st.session_state.exp_df[model_to_plot_viz].max()), key="opt_z_max")
-        z_range = [z_min, z_max]
+        enable_z_limit_opt = st.checkbox("Set Manual Z-Axis Range", value=False, key="opt_z_manual")
+        z_range = None
+        if enable_z_limit_opt:
+            z_c1, z_c2 = st.columns(2)
+            default_min = float(st.session_state.exp_df[model_to_plot_viz].min())
+            default_max = float(st.session_state.exp_df[model_to_plot_viz].max())
+            z_min = z_c1.number_input("Min Z Value", value=default_min, key="opt_z_min")
+            z_max = z_c2.number_input("Max Z Value", value=default_max, key="opt_z_max")
+            z_range = [z_min, z_max]
 
         st.write("---")
         st.write("**Surface Grid Lines**")
-        show_x_grid_viz = st.checkbox("Show X-axis grid", value=True, key="viz_show_x_grid")
-        show_y_grid_viz = st.checkbox("Show Y-axis grid", value=True, key="viz_show_y_grid")
+        g_c1, g_c2, g_c3 = st.columns(3)
+        show_x_grid_viz = g_c1.checkbox("Show X-axis grid", value=True, key="viz_show_x_grid")
+        show_y_grid_viz = g_c2.checkbox("Show Y-axis grid", value=True, key="viz_show_y_grid")
+        show_surface_grid_viz = g_c3.checkbox("Show Surface Grid (Wireframe)", value=True, key="viz_show_surface_grid")
 
     plot_params_viz = {
         'x_var': x_var_viz, 'y_var': y_var_viz,
@@ -558,6 +565,7 @@ def render_3d_result_plot(model_to_plot_viz, optimized_dosages_dict):
         'colorscale_2': colorscale_2_viz,
         'show_x_grid': show_x_grid_viz,
         'show_y_grid': show_y_grid_viz,
+        'show_surface_grid': show_surface_grid_viz,
         'point_symbol_1': point_symbol_1_viz,
         'point_color_1': point_color_1_viz,
         'point_symbol_2': point_symbol_2_viz,
