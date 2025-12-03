@@ -194,7 +194,7 @@ def run_multi_objective_optimizer():
     model_1_name = model_1_formatted.split(":")[0]
 
     r_min = st.number_input(f"可接受的最小值", value=0.0, format="%.4f", key="edu_multi_min")
-    r_max = st.number_input(f"可接受的最大值", value=0.0, format="%.4f", key="edu_multi_max")
+    r_max = st.number_input(f"可接受的最大值", value=1.0, format="%.4f", key="edu_multi_max")
 
     st.markdown("**目標二 (主要優化目標)**")
     model_2_options = [m for m in formatted_models if not m.startswith(model_1_name)]
@@ -310,17 +310,19 @@ def render_main_dashboard():
             st.markdown("##### 顏色與格線 (Colors & Grids)")
             c1, c2, c3 = st.columns(3)
             colorscale = c1.selectbox("顏色主題 (Color Scale)", colorscale_options, index=1)
-            show_x_grid = c2.checkbox("顯示 X 軸網格", value=False)
-            show_y_grid = c3.checkbox("顯示 Y 軸網格", value=False)
+            # Default Grids to TRUE
+            show_x_grid = c2.checkbox("顯示 X 軸網格", value=True)
+            show_y_grid = c3.checkbox("顯示 Y 軸網格", value=True)
             show_actual_data = st.toggle("顯示實際數據點 (Show Actual Data)", value=True)
 
             st.markdown("##### Z 軸範圍 (Z-Axis Range)")
-            z_c1, z_c2 = st.columns(2)
-            # Default to data min/max
-            data_min = float(st.session_state.exp_df[model_to_plot_1].min())
-            data_max = float(st.session_state.exp_df[model_to_plot_1].max())
-            z_min = z_c1.number_input("最小 Z 值 (Min Z)", value=data_min)
-            z_max = z_c2.number_input("最大 Z 值 (Max Z)", value=data_max)
+            enable_z_limit = st.checkbox("手動設定 Z 軸範圍 (Manual Range)", value=False)
+            z_range = None
+            if enable_z_limit:
+                z_c1, z_c2 = st.columns(2)
+                z_min = z_c1.number_input("最小 Z 值 (Min Z)", value=0.0)
+                z_max = z_c2.number_input("最大 Z 值 (Max Z)", value=100.0)
+                z_range = [z_min, z_max]
             
             st.markdown("##### 匯出設定 (Export)")
             download_scale = st.number_input("圖片下載解析度倍率 (Download Scale)", min_value=1.0, max_value=5.0, value=2.0, step=0.5)
@@ -347,7 +349,7 @@ def render_main_dashboard():
             'colorscale_1': colorscale,
             'show_x_grid': show_x_grid,
             'show_y_grid': show_y_grid,
-            'z_range': [z_min, z_max],
+            'z_range': z_range,
         }
         
         # Configuration for the plotly figure (passed separately)
