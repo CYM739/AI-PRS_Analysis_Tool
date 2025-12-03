@@ -127,8 +127,8 @@ def run_analysis(dataframe, independent_vars, dependent_var, model_type, model_p
         raise ValueError(f"Unknown model type: {model_type}")
 
 def predict_surface(model, all_alphabet_vars, x_var, y_var, fixed_vars_dict, x_range, y_range):
-    x_values = np.linspace(x_range[0], x_range[1], 50)
-    y_values = np.linspace(y_range[0], y_range[1], 50)
+    x_values = np.linspace(x_range[0], x_range[1], 100)
+    y_values = np.linspace(y_range[0], y_range[1], 100)
     x_grid, y_grid = np.meshgrid(x_values, y_values)
     predict_df = pd.DataFrame({x_var: x_grid.flatten(), y_var: y_grid.flatten()})
 
