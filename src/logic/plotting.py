@@ -15,24 +15,38 @@ def plot_response_surface(dataframe, OLS_model_1, all_alphabet_vars, x_var, y_va
                           point_size=8, show_actual_data=True,
                           main_title=None, x_title=None, y_title=None, z_title=None,
                           colorscale_1='Plasma', colorscale_2='Greys',
-                          show_x_grid=True, show_y_grid=True, show_surface_grid=True, # Defaults updated
+                          show_x_grid=True, show_y_grid=True, show_surface_grid=True, 
                           title_font_size=18, axis_title_font_size=12, axis_tick_font_size=10,
                           point_symbol_1='x', point_color_1='red',
                           point_symbol_2='cross', point_color_2='#00FF00', z_range=None, **kwargs):
     
-    x_range = (dataframe[x_var].min(), dataframe[x_var].max())
-    y_range = (dataframe[y_var].min(), dataframe[y_var].max())
+    x_min, x_max = dataframe[x_var].min(), dataframe[x_var].max()
+    y_min, y_max = dataframe[y_var].min(), dataframe[y_var].max()
+    x_range = (x_min, x_max)
+    y_range = (y_min, y_max)
 
     x_grid_1, y_grid_1, z_grid_1 = predict_surface(OLS_model_1, all_alphabet_vars, x_var, y_var, fixed_vars_dict_1, x_range, y_range)
 
-    # Configure surface contours (grid lines on the surface)
+    # --- NEW LOGIC: Dynamic Grid Density ---
     contours_config = None
     if show_surface_grid:
-        # Create a wireframe effect with black lines
+        # Calculate step size to ensure roughly 15 grid lines per axis
+        # This fixes the "big squares" issue
+        grid_density = 15
+        x_step = (x_max - x_min) / grid_density
+        y_step = (y_max - y_min) / grid_density
+
         contours_config = {
-            "x": {"show": True, "color": "black", "width": 1, "highlight": False},
-            "y": {"show": True, "color": "black", "width": 1, "highlight": False}
+            "x": {
+                "show": True, "start": x_min, "end": x_max, "size": x_step,
+                "color": "black", "width": 1, "highlight": False
+            },
+            "y": {
+                "show": True, "start": y_min, "end": y_max, "size": y_step,
+                "color": "black", "width": 1, "highlight": False
+            }
         }
+    # ---------------------------------------
 
     trace1 = go.Surface(
         z=z_grid_1, x=x_grid_1, y=y_grid_1, 
