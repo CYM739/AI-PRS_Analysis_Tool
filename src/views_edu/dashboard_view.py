@@ -40,10 +40,6 @@ def render_sidebar():
         with st.expander("⚖️ 多目標優化器", expanded=True):
             run_multi_objective_optimizer()
 
-        st.divider()
-        with st.expander("🎨 圖表設定", expanded=True):
-            st.button("更新儀表板圖表", key="update_charts", use_container_width=True)
-
 
 def manage_projects():
     """側邊欄中的專案建立、載入、刪除功能。"""
@@ -287,7 +283,7 @@ def render_main_dashboard():
         model_to_plot_2 = None
         optimized_point_2 = None
         if multi_opt_results:
-            with st.expander("圖表顯示設定"):
+            with st.expander("圖表顯示設定 (Overlay)"):
                 overlay_second_model = st.checkbox("疊加第二個模型曲面", value=True)
                 if overlay_second_model:
                     if model_to_plot_1 == multi_opt_results['model_1_name']:
@@ -296,19 +292,38 @@ def render_main_dashboard():
                         model_to_plot_2 = multi_opt_results['model_1_name']
                     optimized_point_2 = point_to_plot
 
-        # --- Added Chart Appearance Controls ---
+        # --- Chart Appearance Controls ---
+        colorscale_options = ['Viridis', 'Plasma', 'Jet', 'Cividis', 'Hot', 'Cool', 'Blues', 'Greens', 'RdBu', 'Greys']
+        
         with st.expander("🎨 圖表外觀設定 (Chart Appearance)"):
-            ax_c1, ax_c2 = st.columns(2)
-            axis_title_font_size = ax_c1.slider(
-                "軸標題字體大小 (Axis Title Size)", 
-                min_value=8, max_value=24, value=12, 
-                key="edu_dashboard_axis_title"
-            )
-            axis_tick_font_size = ax_c2.slider(
-                "刻度字體大小 (Tick Label Size)", 
-                min_value=8, max_value=24, value=10, 
-                key="edu_dashboard_axis_tick"
-            )
+            st.markdown("##### 標題與字體 (Titles & Fonts)")
+            t1, t2 = st.columns(2)
+            custom_main_title = t1.text_input("圖表主標題 (Main Title)", placeholder="預設標題")
+            axis_title_font_size = t2.slider("軸標題字體大小 (Axis Title Size)", 8, 24, 12)
+            
+            t3, t4, t5 = st.columns(3)
+            custom_x_title = t3.text_input("X 軸標題", placeholder="預設")
+            custom_y_title = t4.text_input("Y 軸標題", placeholder="預設")
+            custom_z_title = t5.text_input("Z 軸標題", placeholder="預設")
+            axis_tick_font_size = st.slider("刻度數字字體大小 (Tick Font Size)", 8, 24, 10)
+
+            st.markdown("##### 顏色與格線 (Colors & Grids)")
+            c1, c2, c3 = st.columns(3)
+            colorscale = c1.selectbox("顏色主題 (Color Scale)", colorscale_options, index=1)
+            show_x_grid = c2.checkbox("顯示 X 軸網格", value=False)
+            show_y_grid = c3.checkbox("顯示 Y 軸網格", value=False)
+            show_actual_data = st.toggle("顯示實際數據點 (Show Actual Data)", value=True)
+
+            st.markdown("##### Z 軸範圍 (Z-Axis Range)")
+            z_c1, z_c2 = st.columns(2)
+            # Default to data min/max
+            data_min = float(st.session_state.exp_df[model_to_plot_1].min())
+            data_max = float(st.session_state.exp_df[model_to_plot_1].max())
+            z_min = z_c1.number_input("最小 Z 值 (Min Z)", value=data_min)
+            z_max = z_c2.number_input("最大 Z 值 (Max Z)", value=data_max)
+            
+            st.markdown("##### 匯出設定 (Export)")
+            download_scale = st.number_input("圖片下載解析度倍率 (Download Scale)", min_value=1.0, max_value=5.0, value=2.0, step=0.5)
 
         plot_params = {
             'x_var': x_var,
@@ -316,15 +331,37 @@ def render_main_dashboard():
             'z_var_1': model_to_plot_1,
             'fixed_vars_dict_1': fixed_vars,
             'variable_descriptions': st.session_state.variable_descriptions,
-            'show_actual_data': True,
+            'show_actual_data': show_actual_data,
             'optimized_point': point_to_plot,
             'z_var_2': model_to_plot_2,
             'fixed_vars_dict_2': fixed_vars if model_to_plot_2 else None,
             'optimized_point_2': optimized_point_2,
+            
+            # Appearance Settings
+            'main_title': custom_main_title or None,
+            'x_title': custom_x_title or None,
+            'y_title': custom_y_title or None,
+            'z_title': custom_z_title or None,
             'axis_title_font_size': axis_title_font_size,
             'axis_tick_font_size': axis_tick_font_size,
+            'colorscale_1': colorscale,
+            'show_x_grid': show_x_grid,
+            'show_y_grid': show_y_grid,
+            'z_range': [z_min, z_max],
         }
-        display_surface_plot(plot_params)
+        
+        # Configuration for the plotly figure (passed separately)
+        plot_config = {
+            'toImageButtonOptions': {
+                'format': 'png',
+                'filename': f'{model_to_plot_1}_surface_plot',
+                'height': 700,
+                'width': 700,
+                'scale': download_scale
+            }
+        }
+        
+        display_surface_plot(plot_params, plot_config)
 
     with col2:
         st.subheader("🎯 優化結果")
