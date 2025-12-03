@@ -194,7 +194,8 @@ def run_multi_objective_optimizer():
     model_1_name = model_1_formatted.split(":")[0]
 
     r_min = st.number_input(f"可接受的最小值", value=0.0, format="%.4f", key="edu_multi_min")
-    r_max = st.number_input(f"可接受的最大值", value=0.0, format="%.4f", key="edu_multi_max")
+    # CHANGED: Updated key to force Streamlit to use the new default value
+    r_max = st.number_input(f"可接受的最大值", value=0.0, format="%.4f", key="edu_multi_max_v2")
 
     st.markdown("**目標二 (主要優化目標)**")
     model_2_options = [m for m in formatted_models if not m.startswith(model_1_name)]
