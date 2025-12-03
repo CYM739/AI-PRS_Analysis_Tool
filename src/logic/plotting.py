@@ -15,23 +15,44 @@ def plot_response_surface(dataframe, OLS_model_1, all_alphabet_vars, x_var, y_va
                           point_size=8, show_actual_data=True,
                           main_title=None, x_title=None, y_title=None, z_title=None,
                           colorscale_1='Plasma', colorscale_2='Greys',
-                          show_x_grid=False, show_y_grid=False, 
+                          show_x_grid=True, show_y_grid=True, show_surface_grid=True, # Defaults updated
                           title_font_size=18, axis_title_font_size=12, axis_tick_font_size=10,
                           point_symbol_1='x', point_color_1='red',
                           point_symbol_2='cross', point_color_2='#00FF00', z_range=None, **kwargs):
+    
     x_range = (dataframe[x_var].min(), dataframe[x_var].max())
     y_range = (dataframe[y_var].min(), dataframe[y_var].max())
 
     x_grid_1, y_grid_1, z_grid_1 = predict_surface(OLS_model_1, all_alphabet_vars, x_var, y_var, fixed_vars_dict_1, x_range, y_range)
 
-    trace1 = go.Surface(z=z_grid_1, x=x_grid_1, y=y_grid_1, colorscale=colorscale_1, opacity=0.8, name=f'Surface: {z_var_1}')
+    # Configure surface contours (grid lines on the surface)
+    contours_config = None
+    if show_surface_grid:
+        # Create a wireframe effect with black lines
+        contours_config = {
+            "x": {"show": True, "color": "black", "width": 1, "highlight": False},
+            "y": {"show": True, "color": "black", "width": 1, "highlight": False}
+        }
+
+    trace1 = go.Surface(
+        z=z_grid_1, x=x_grid_1, y=y_grid_1, 
+        colorscale=colorscale_1, opacity=0.9, 
+        name=f'Surface: {z_var_1}',
+        contours=contours_config
+    )
+    
     if z_range:
         trace1.update(cmin=z_range[0], cmax=z_range[1])
     traces = [trace1]
 
     if OLS_model_2 and z_var_2 and fixed_vars_dict_2 is not None:
         x_grid_2, y_grid_2, z_grid_2 = predict_surface(OLS_model_2, all_alphabet_vars, x_var, y_var, fixed_vars_dict_2, x_range, y_range)
-        trace2 = go.Surface(z=z_grid_2, x=x_grid_2, y=y_grid_2, colorscale=colorscale_2, opacity=0.6, name=f'Surface: {z_var_2}', showscale=False)
+        trace2 = go.Surface(
+            z=z_grid_2, x=x_grid_2, y=y_grid_2, 
+            colorscale=colorscale_2, opacity=0.6, 
+            name=f'Surface: {z_var_2}', showscale=False,
+            contours=contours_config
+        )
         if z_range:
             trace2.update(cmin=z_range[0], cmax=z_range[1])
         traces.append(trace2)
@@ -63,7 +84,6 @@ def plot_response_surface(dataframe, OLS_model_1, all_alphabet_vars, x_var, y_va
     x_desc = variable_descriptions.get(x_var, x_var)
     y_desc = variable_descriptions.get(y_var, y_var)
 
-    # MODIFICATION HERE: Look up descriptive names for the fixed variables title.
     title_fixed_vars = ", ".join([f"{variable_descriptions.get(k, k)}={v}" for k, v in fixed_vars_dict_1.items()])
     default_title = f'Response Surface for {z_desc_1}<br>(Fixed: {title_fixed_vars})'
     
