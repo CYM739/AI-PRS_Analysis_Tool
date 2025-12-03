@@ -99,10 +99,15 @@ def render():
                 axis_tick_font_size = st.slider("Axis Tick Label Font Size (Numbers)", min_value=8, max_value=24, value=10, key="main_plot_3d_axis_tick_font")
                 
                 st.write("**Z-Axis Range**")
-                z_c1, z_c2 = st.columns(2)
-                z_min = z_c1.number_input("Min Z Value", value=float(st.session_state.exp_df[model_to_plot_1].min()), key="plot_z_min")
-                z_max = z_c2.number_input("Max Z Value", value=float(st.session_state.exp_df[model_to_plot_1].max()), key="plot_z_max")
-                z_range = [z_min, z_max]
+                enable_z_limit = st.checkbox("Set Manual Z-Axis Range", value=False, key="plot_z_manual")
+                z_range = None
+                if enable_z_limit:
+                    z_c1, z_c2 = st.columns(2)
+                    default_min = float(st.session_state.exp_df[model_to_plot_1].min())
+                    default_max = float(st.session_state.exp_df[model_to_plot_1].max())
+                    z_min = z_c1.number_input("Min Z Value", value=default_min, key="plot_z_min")
+                    z_max = z_c2.number_input("Max Z Value", value=default_max, key="plot_z_max")
+                    z_range = [z_min, z_max]
                 
                 st.write("---")
                 st.write("**Colors and Grids**")
@@ -110,12 +115,13 @@ def render():
                 custom_colorscale_1 = cr_c1.selectbox("Primary Surface Color Scheme", options=colorscale_options)
                 with cr_c2:
                     st.write("Surface Grid Lines")
-                    show_x_grid = st.checkbox("Show X-axis grid", value=False)
-                    show_y_grid = st.checkbox("Show Y-axis grid", value=False)
+                    show_x_grid = st.checkbox("Show X-axis grid", value=True)
+                    show_y_grid = st.checkbox("Show Y-axis grid", value=True)
+                    show_surface_grid = st.checkbox("Show Surface Grid (Wireframe)", value=True)
 
                 st.write("---")
                 st.write("**Export Settings**")
-                download_scale = st.number_input("Download Resolution Scale", min_value=1.0, max_value=10.0, value=1.0, step=0.5,help="Increase for higher resolution PNG downloads.")
+                download_scale = st.number_input("Download Resolution Scale", min_value=1.0, max_value=10.0, value=1.0, step=0.5, help="Increase for higher resolution PNG downloads.")
 
             plot_parameters = {
                 'x_var': x_var,
@@ -135,6 +141,7 @@ def render():
                 'z_range': z_range,
                 'show_x_grid': show_x_grid,
                 'show_y_grid': show_y_grid,
+                'show_surface_grid': show_surface_grid,
                 'axis_title_font_size': axis_title_font_size,
                 'axis_tick_font_size': axis_tick_font_size,
                 'download_scale': download_scale
@@ -142,7 +149,6 @@ def render():
             plot_config = {'toImageButtonOptions': {'format': 'png','filename': f'{model_to_plot_1}_surface_plot','height': 700,'width': 700,'scale': download_scale}}
             display_surface_plot(plot_parameters, plot_config)
 
-        # ✅ BUG FIX: Corrected the indentation of this entire 'elif' block
         elif plot_type == "2D Trade-Off Contour":
             st.subheader("Generate a 2D Trade-Off Contour Plot")
             if len(formatted_models) < 2:
@@ -195,7 +201,6 @@ def render():
                     )
                     st.plotly_chart(fig, use_container_width=True)
 
-        # ✅ BUG FIX: Corrected the indentation of this entire 'elif' block
         elif plot_type == "2D Trade-Off Analysis":
             st.subheader("Generate a 2D Trade-Off Analysis Plot")
             st.info("Select two models and an independent variable to see how the outcomes and their difference change as that single variable changes.")
@@ -241,7 +246,6 @@ def render():
             else:
                 st.warning("You need at least two outcome models to generate a trade-off plot.")
 
-    # ✅ BUG FIX: Corrected the indentation of this entire 'else' block
     else: 
         st.subheader("Generate 2D Response Curve")
         st.info("Since there is only one independent variable, an interactive 2D plot is shown to illustrate its effect on the outcome.")
