@@ -296,6 +296,20 @@ def render_main_dashboard():
                         model_to_plot_2 = multi_opt_results['model_1_name']
                     optimized_point_2 = point_to_plot
 
+        # --- Added Chart Appearance Controls ---
+        with st.expander("🎨 圖表外觀設定 (Chart Appearance)"):
+            ax_c1, ax_c2 = st.columns(2)
+            axis_title_font_size = ax_c1.slider(
+                "軸標題字體大小 (Axis Title Size)", 
+                min_value=8, max_value=24, value=12, 
+                key="edu_dashboard_axis_title"
+            )
+            axis_tick_font_size = ax_c2.slider(
+                "刻度字體大小 (Tick Label Size)", 
+                min_value=8, max_value=24, value=10, 
+                key="edu_dashboard_axis_tick"
+            )
+
         plot_params = {
             'x_var': x_var,
             'y_var': y_var,
@@ -307,6 +321,8 @@ def render_main_dashboard():
             'z_var_2': model_to_plot_2,
             'fixed_vars_dict_2': fixed_vars if model_to_plot_2 else None,
             'optimized_point_2': optimized_point_2,
+            'axis_title_font_size': axis_title_font_size,
+            'axis_tick_font_size': axis_tick_font_size,
         }
         display_surface_plot(plot_params)
 
