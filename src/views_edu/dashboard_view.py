@@ -308,11 +308,11 @@ def render_main_dashboard():
             axis_tick_font_size = st.slider("刻度數字字體大小 (Tick Font Size)", 8, 24, 10)
 
             st.markdown("##### 顏色與格線 (Colors & Grids)")
-            c1, c2, c3 = st.columns(3)
+            c1, c2, c3, c4 = st.columns(4)
             colorscale = c1.selectbox("顏色主題 (Color Scale)", colorscale_options, index=1)
-            # Default Grids to TRUE
             show_x_grid = c2.checkbox("顯示 X 軸網格", value=True)
             show_y_grid = c3.checkbox("顯示 Y 軸網格", value=True)
+            show_surface_grid = c4.toggle("顯示曲面網格 (Show Surface Grid)", value=True)
             show_actual_data = st.toggle("顯示實際數據點 (Show Actual Data)", value=True)
 
             st.markdown("##### Z 軸範圍 (Z-Axis Range)")
@@ -349,6 +349,7 @@ def render_main_dashboard():
             'colorscale_1': colorscale,
             'show_x_grid': show_x_grid,
             'show_y_grid': show_y_grid,
+            'show_surface_grid': show_surface_grid,
             'z_range': z_range,
         }
         
