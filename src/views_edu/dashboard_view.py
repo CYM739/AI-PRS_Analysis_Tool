@@ -169,11 +169,18 @@ def run_single_objective_optimizer():
         if result.success:
             st.success("優化成功！")
             final_outcome = objective_function(result.x, selected_model, st.session_state.independent_vars)
+            results_dict = dict(zip(st.session_state.independent_vars, result.x))
             st.session_state.single_opt_results = {
-                "dosages": dict(zip(st.session_state.independent_vars, result.x)),
+                "dosages": results_dict,
                 "outcome": final_outcome,
                 "model_name": model_name
             }
+            
+            # [FIX START] Force update the slider values for the dashboard
+            for var, val in results_dict.items():
+                st.session_state[f"main_plot_fixed_{var}"] = float(val)
+            # [FIX END]
+            
             st.rerun()
         else:
             st.error(f"優化失敗: {result.message}")
@@ -194,7 +201,6 @@ def run_multi_objective_optimizer():
     model_1_name = model_1_formatted.split(":")[0]
 
     r_min = st.number_input(f"可接受的最小值", value=0.0, format="%.4f", key="edu_multi_min")
-    # CHANGED: Updated key to force Streamlit to use the new default value
     r_max = st.number_input(f"可接受的最大值", value=0.0, format="%.4f", key="edu_multi_max_v2")
 
     st.markdown("**目標二 (主要優化目標)**")
@@ -231,13 +237,20 @@ def run_multi_objective_optimizer():
             outcome_1 = objective_function(final_dosages, model_1, st.session_state.independent_vars)
             outcome_2 = objective_function(final_dosages, model_2, st.session_state.independent_vars)
             
+            results_dict = dict(zip(st.session_state.independent_vars, final_dosages))
             st.session_state.multi_opt_results = {
-                "dosages": dict(zip(st.session_state.independent_vars, final_dosages)),
+                "dosages": results_dict,
                 "outcome_1": outcome_1,
                 "outcome_2": outcome_2,
                 "model_1_name": model_1_name,
                 "model_2_name": model_2_name,
             }
+            
+            # [FIX START] Force update the slider values for the dashboard
+            for var, val in results_dict.items():
+                st.session_state[f"main_plot_fixed_{var}"] = float(val)
+            # [FIX END]
+
             st.rerun()
         else:
             st.error(f"優化失敗: {status_message}")
@@ -278,7 +291,12 @@ def render_main_dashboard():
             for var in other_vars:
                 min_v, _, max_v = st.session_state.variable_stats[var]
                 desc = st.session_state.variable_descriptions.get(var, var)
+                
+                # Logic: If point_to_plot exists, we prefer that. 
+                # BUT st.slider relies on session state key if it exists.
+                # The FIX above ensures session state key is updated.
                 default_val = point_to_plot[var] if point_to_plot and var in point_to_plot else float((min_v+max_v)/2)
+                
                 fixed_vars[var] = st.slider(f"固定值: {desc}", float(min_v), float(max_v), default_val, key=f"main_plot_fixed_{var}")
 
         model_to_plot_2 = None
