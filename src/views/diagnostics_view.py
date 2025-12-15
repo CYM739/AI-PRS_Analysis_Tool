@@ -1,4 +1,3 @@
-# src/views/diagnostics_view.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -10,13 +9,15 @@ from logic.diagnostics import (
     perform_normality_test, 
     perform_heteroscedasticity_test,
     perform_autocorrelation_test,
+    perform_kfold_cv,
+    perform_bootstrap_analysis,
     generate_diagnostics_report
 )
 from logic.models import OLSWrapper
 
 def render():
-    st.subheader("🔍 OLS Assumption Diagnostics")
-    st.info("This module evaluates whether your Polynomial OLS model satisfies the key statistical assumptions required for valid p-values and confidence intervals.")
+    st.subheader("🔍 OLS Assumption & Uncertainty Diagnostics")
+    st.info("This module evaluates statistical assumptions and quantifies predictive uncertainty using Cross-Validation and Bootstrapping.")
 
     if 'analysis_done' not in st.session_state or not st.session_state.analysis_done:
         st.warning("Please load a project and run an analysis first to generate models.")
@@ -41,14 +42,15 @@ def render():
     with col_btn:
         st.write("") # Spacing
         st.write("") 
-        report_text = generate_diagnostics_report(model_wrapper)
-        st.download_button(
-            label="📄 Download Full Report",
-            data=report_text,
-            file_name=f"diagnostics_report_{selected_model_name}.txt",
-            mime="text/plain",
-            help="Download a text file containing the results of all diagnostic tests."
-        )
+        if st.button("📄 Generate Report"):
+             with st.spinner("Generating full diagnostic report..."):
+                report_text = generate_diagnostics_report(model_wrapper)
+                st.download_button(
+                    label="Download Report",
+                    data=report_text,
+                    file_name=f"diagnostics_report_{selected_model_name}.txt",
+                    mime="text/plain"
+                )
     
     # Extract data from the model wrapper
     results = model_wrapper.model # statsmodels ResultsWrapper
@@ -56,23 +58,19 @@ def render():
     fitted_values = results.fittedvalues
     
     # --- Tabbed Interface for Diagnostics ---
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "1. Multicollinearity (VIF)", 
-        "2. Normality (Residuals)", 
+    # FIX: Explicitly create 5 tabs here
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "1. Multicollinearity", 
+        "2. Normality", 
         "3. Homoscedasticity", 
-        "4. Independence"
+        "4. Independence",
+        "5. Predictive Uncertainty"
     ])
 
     # --- 1. Multicollinearity (VIF) ---
     with tab1:
         st.markdown("#### Variance Inflation Factor (VIF)")
-        st.markdown("""
-        **Assumption:** Independent variables should not be highly correlated with each other.
-        * **Goal:** VIF < 5 (Conservative) or < 10 (Relaxed).
-        * **Problem:** High VIF means coefficients are unstable and p-values may be misleading.
-        * **Note:** Polynomial terms ($x, x^2$) naturally cause high VIF. Consider centering data if this is critical.
-        """)
-        
+        st.caption("Checks if variables are redundant (High VIF > 5).")
         try:
             vif_df = calculate_vif(model_wrapper)
             
@@ -91,10 +89,7 @@ def render():
     # --- 2. Normality of Residuals ---
     with tab2:
         st.markdown("#### Normality of Residuals")
-        st.markdown("""
-        **Assumption:** The errors (residuals) should follow a Normal distribution.
-        * **Check:** Q-Q Plot points should hug the red line. Histogram should be bell-shaped.
-        """)
+        st.caption("Checks if errors follow a Bell Curve (p > 0.05 is good).")
         
         col1, col2 = st.columns([1, 2])
         
@@ -104,44 +99,31 @@ def render():
         with col1:
             st.metric(f"{test_name} p-value", f"{p_val:.4f}")
             if p_val < 0.05:
-                st.error(f"❌ **Reject H0**: Residuals are NOT normally distributed (p < 0.05). Consider transforming the response variable.")
+                st.error("❌ **Reject H0**: Residuals NOT normal.")
             else:
-                st.success(f"✅ **Fail to Reject H0**: Residuals appear normal (p >= 0.05).")
+                st.success("✅ **Fail to Reject H0**: Residuals look normal.")
 
         # Plots
         with col2:
             # Q-Q Plot
-            # Calculate quantiles
             (osm, osr), (slope, intercept, r) = stats.probplot(residuals, dist="norm", plot=None)
-            
             fig_qq = go.Figure()
             fig_qq.add_trace(go.Scatter(x=osm, y=osr, mode='markers', name='Residuals', marker=dict(color='blue', opacity=0.6)))
-            
-            # Regression line
             x_line = np.array([np.min(osm), np.max(osm)])
             y_line = slope * x_line + intercept
             fig_qq.add_trace(go.Scatter(x=x_line, y=y_line, mode='lines', name='Normal Line', line=dict(color='red', width=2)))
-            
-            fig_qq.update_layout(
-                title="Q-Q Plot", 
-                xaxis_title="Theoretical Quantiles", 
-                yaxis_title="Sample Quantiles",
-                height=400
-            )
+            fig_qq.update_layout(title="Q-Q Plot", height=350)
             st.plotly_chart(fig_qq, use_container_width=True)
 
             # Histogram
-            fig_hist = px.histogram(x=residuals, nbins=30, title="Histogram of Residuals")
+            fig_hist = px.histogram(x=residuals, nbins=30, title="Residual Histogram")
             fig_hist.update_layout(xaxis_title="Residuals", showlegend=False, height=350)
             st.plotly_chart(fig_hist, use_container_width=True)
 
     # --- 3. Homoscedasticity ---
     with tab3:
         st.markdown("#### Homoscedasticity (Constant Variance)")
-        st.markdown("""
-        **Assumption:** The variance of residuals should be constant across all predicted values.
-        * **Check:** Residuals vs. Fitted plot should show a random cloud, not a 'funnel' or 'U' shape.
-        """)
+        st.caption("Checks if error variance is constant (p > 0.05 is good).")
         
         col1, col2 = st.columns([1, 2])
         
@@ -151,9 +133,9 @@ def render():
         with col1:
             st.metric("Breusch-Pagan p-value", f"{lm_p:.4f}")
             if lm_p < 0.05:
-                st.error("❌ **Reject H0**: Heteroscedasticity detected (Variance is not constant).")
+                st.error("❌ **Reject H0**: Heteroscedasticity detected.")
             else:
-                st.success("✅ **Fail to Reject H0**: Homoscedasticity assumed (Variance is constant).")
+                st.success("✅ **Fail to Reject H0**: Variance is constant.")
         
         with col2:
             # Residuals vs Fitted Plot
@@ -167,9 +149,7 @@ def render():
     # --- 4. Independence ---
     with tab4:
         st.markdown("#### Independence of Errors")
-        st.markdown("""
-        **Assumption:** Residuals should be independent (no autocorrelation).
-        """)
+        st.caption("Checks if errors are correlated with each other (Target ~2.0).")
         
         dw_stat = perform_autocorrelation_test(residuals)
         
@@ -180,8 +160,9 @@ def render():
         else:
              st.warning("⚠️ **Possible Autocorrelation**: Value is far from 2.0 (Range: 0-4).")
              
-        st.info("Note: This test is most relevant for time-series data or data with a sequential order (e.g., pipetting order).")
-# --- 5. Predictive Uncertainty (NEW) ---
+        st.info("Note: This test is most relevant for time-series data or data with a sequential order.")
+
+    # --- 5. Predictive Uncertainty (NEW) ---
     with tab5:
         st.markdown("### Quantifying Uncertainty")
         st.markdown("Evaluate how well the model generalizes (Cross-Validation) and how stable the coefficients are (Bootstrap).")
