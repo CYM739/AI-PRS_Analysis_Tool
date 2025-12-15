@@ -5,7 +5,8 @@ import os
 import multiprocessing
 import json
 import sys
-from views import library_view, plotting_view, optimizer_view, ai_optimizer_view, evaluation_view, synergy_view
+# Added diagnostics_view to imports
+from views import library_view, plotting_view, optimizer_view, ai_optimizer_view, evaluation_view, synergy_view, diagnostics_view
 from utils import state_management
 from logic.models import RandomForestWrapper
 
@@ -58,13 +59,14 @@ def main():
     # --- Main Application Body (Tabs) ---
     analysis_is_done = st.session_state.get('analysis_done', False)
     
-    # Define the full list of tabs directly, removing the conditional check
+    # Updated Tab List to include Diagnostics
     tab_list = [
-        "📚 Project Library", "🧊 Plotting Tools", "🎯 Optimizer",
+        "📚 Project Library", "🧊 Plotting Tools", "🔍 Diagnostics", "🎯 Optimizer",
         "🤖 AI Optimizer", "🤝 Synergy Analysis", "✅ Actual vs. Predicted",
         "💾 Session State"
     ]
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(tab_list)
+    # Unpacked 8 tabs now
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(tab_list)
 
     with tab1:
         library_view.render()
@@ -74,7 +76,15 @@ def main():
             plotting_view.render()
         else:
             st.info("Load and analyze a project from the 'Project Library' to use the plotting tools.")
+
+    # New Diagnostics Tab
     with tab3:
+        if analysis_is_done:
+            diagnostics_view.render()
+        else:
+            st.info("Load and analyze a project from the 'Project Library' to view OLS diagnostics.")
+
+    with tab4:
         if analysis_is_done:
             active_model_is_rf = False
             if st.session_state.get('wrapped_models'):
@@ -88,33 +98,28 @@ def main():
         else:
             st.info("Load and analyze a project from the 'Project Library' to use the optimizer.")
 
-    # Render all tabs unconditionally
-    with tab4:
+    with tab5:
         if analysis_is_done:
             ai_optimizer_view.render()
         else:
             st.info("Load and analyze a project from the 'Project Library' to use the AI optimizer.")
-    with tab5:
+    with tab6:
         if analysis_is_done:
             synergy_view.render()
         else:
             st.info("Load and analyze a project from the 'Project Library' to perform synergy analysis.")
-    with tab6:
+    with tab7:
         if analysis_is_done:
             evaluation_view.render()
         else:
             st.info("Load and analyze a project from the 'Project Library' to view model evaluations.")
-    with tab7:
+    with tab8:
         render_session_state_tab()
 
 def render_session_state_tab():
     """Renders the content for the Session State tab, including the password unlock."""
     st.subheader("Current Session State (for debugging)")
     
-    # --- Experimental Feature Unlock (REMOVED) ---
-    # The expander and password logic are no longer needed.
-
-    # --- Structured Session State Display ---
     with st.expander("Loaded DataFrames"):
         st.write("#### Original Data (`exp_df`)")
         st.dataframe(st.session_state.get("exp_df"))
@@ -134,12 +139,10 @@ def render_session_state_tab():
         st.write("**Classic Multi-Objective Result:**", st.session_state.get("classic_multi_opt_results", "Not run yet."))
         st.write("**Weighted Score Multi-Objective Result:**", st.session_state.get("advanced_tradeoff_results", "Not run yet."))
 
-    # This check can be simplified or removed, but leaving it is harmless.
     if st.session_state.get('experimental_unlocked', False):
         with st.expander("AI Optimizer Results"):
             st.write("**Bayesian (Optimize All) Result:**")
             if st.session_state.get("bayesian_opt_results"):
-                # Display only serializable parts of the result
                 display_dict = {k: v for k, v in st.session_state.bayesian_opt_results.items() if k not in ['convergence_plot', 'objective_plot', 'raw_result']}
                 st.json(display_dict)
             else:
@@ -147,7 +150,6 @@ def render_session_state_tab():
 
             st.write("**Bayesian (Combination) Result:**")
             if st.session_state.get("bayesian_combo_results"):
-                # Display only serializable parts
                 display_dict = {k: v for k, v in st.session_state.bayesian_combo_results.items() if k != 'ranking_plot'}
                 st.json(display_dict)
             else:
