@@ -250,72 +250,77 @@ def generate_optimization_report(report_data, variable_descriptions):
 def calculate_synergy(dataframe, drug1_name, drug2_name, effect_name, model='gamma'):
     """
     Calculates drug synergy using the specified model.
-    Supported models: 'gamma', 'hsa'.
-    
-    Assumption: Input 'dataframe' contains 'Inhibition' data (0 to 1), where 1 is max effect.
-    If 'gamma' is selected, this function internally converts Inhibition to Viability (1 - Inhibition)
-    to perform the standard Gamma ratio calculation (Viability_Obs / Viability_Exp).
+    Robustly handles float/int dose mismatches and missing single-agent data.
     """
-    # Create Response Matrix (Inhibition)
-    # Sort axis to ensure index 0 is at the top/left for broadcasting
-    response_matrix = dataframe.pivot_table(
+    # 1. Create Response Matrix (Inhibition)
+    # Ensure dose columns are strictly numeric (float) to avoid "0" vs "0.0" mismatch
+    df_clean = dataframe.copy()
+    df_clean[drug1_name] = pd.to_numeric(df_clean[drug1_name], errors='coerce')
+    df_clean[drug2_name] = pd.to_numeric(df_clean[drug2_name], errors='coerce')
+
+    response_matrix = df_clean.pivot_table(
         index=drug1_name, columns=drug2_name, values=effect_name
     ).sort_index(axis=0).sort_index(axis=1)
 
-    # Validation: Ensure zero-dose controls exist
-    if 0 not in response_matrix.index or 0 not in response_matrix.columns:
-        raise ValueError("Missing single-agent controls (dose=0) for one or both drugs.")
+    # 2. Robustly Identify the "Zero" (Control) Dose
+    # Instead of response_matrix[0], we find the index/column closest to 0.0
+    # This handles cases like 0, 0.0, or floating point noise (1e-10).
+    row_indexes = response_matrix.index.values
+    col_indexes = response_matrix.columns.values
 
-    # Extract Single Agent Responses (Inhibition)
-    # drug1_single: Column where Drug2 dose is 0
-    drug1_single = response_matrix[0] 
-    # drug2_single: Row where Drug1 dose is 0
-    drug2_single = response_matrix.loc[0]
+    # Find closest to 0
+    row_0_candidates = row_indexes[np.abs(row_indexes) < 1e-6]
+    col_0_candidates = col_indexes[np.abs(col_indexes) < 1e-6]
 
-    # Vectorized broadcasting to create expected grids
-    # d1_grid: Drug 1 effect projected across columns (Drug 2 axis)
+    if len(row_0_candidates) == 0 or len(col_0_candidates) == 0:
+        raise ValueError("Missing zero-dose controls (0.0). Please ensure your data includes a vehicle control (0,0).")
+
+    zero_row_val = row_0_candidates[0] # The actual value (e.g., 0.0)
+    zero_col_val = col_0_candidates[0]
+
+    # 3. Extract Single Agent Responses
+    # drug1_single: Effect of Drug 1 when Drug 2 is ~0
+    drug1_single = response_matrix[zero_col_val] 
+    # drug2_single: Effect of Drug 2 when Drug 1 is ~0
+    drug2_single = response_matrix.loc[zero_row_val]
+
+    # 4. Vectorized Broadcasting
+    # d1_grid: Project Drug 1 single-agent effect across the matrix
     d1_grid = pd.DataFrame(
         np.tile(drug1_single.values[:, None], (1, response_matrix.shape[1])), 
         index=response_matrix.index, columns=response_matrix.columns
     )
-    # d2_grid: Drug 2 effect projected across rows (Drug 1 axis)
+    # d2_grid: Project Drug 2 single-agent effect across the matrix
     d2_grid = pd.DataFrame(
         np.tile(drug2_single.values[None, :], (response_matrix.shape[0], 1)), 
         index=response_matrix.index, columns=response_matrix.columns
     )
 
+    # 5. Calculate Synergy Score
     if model.lower() == 'hsa':
-        # === Excess HSA (Highest Single Agent) ===
-        # Formula: Synergy = Observed_Inhibition - Max(Inhibition_D1, Inhibition_D2)
-        # Result > 0 indicates Synergy (Observed effect is greater than best single agent)
+        # Excess HSA: Observed_Inhibition - Max(Inhibition_D1, Inhibition_D2)
         expected_matrix = np.maximum(d1_grid, d2_grid)
         synergy_matrix = response_matrix - expected_matrix
         return synergy_matrix
 
     elif model.lower() == 'gamma':
-        # === Gamma Score (Nature Communications 2025 algorithm) ===
-        # Formula: Gamma = Observed_Viability / Expected_Viability_HSA
-        # Note: We must convert Inhibition inputs back to Viability (1 - Inhibition)
+        # Gamma Score: Observed_Viability / Expected_Viability_HSA
+        # Note: We convert Inhibition inputs back to Viability (1 - Inhibition)
         
-        # 1. Convert to Viability (Survival)
         V_obs = 1 - response_matrix
         V_d1 = 1 - d1_grid
         V_d2 = 1 - d2_grid
         
-        # 2. Calculate Expected Viability under HSA
-        # The "best" single agent for survival is the one with LOWER survival (stronger kill).
-        # So Expected Viability is min(V_d1, V_d2)
+        # Expected Viability (HSA) = min(V_d1, V_d2) (Stronger kill wins)
         V_expected = np.minimum(V_d1, V_d2)
         
-        # 3. Calculate Ratio
-        # Gamma < 1.0 (or 0.95 per paper) indicates Synergy (Observed survival < Expected)
         epsilon = 1e-9 # Prevent division by zero
         synergy_matrix = V_obs / (V_expected + epsilon)
         
         return synergy_matrix
 
     else:
-        raise ValueError(f"Unknown or unsupported synergy model: {model}")
+        raise ValueError(f"Unknown synergy model: {model}")
 
 def generate_combined_predictions_csv(wrapped_models, data_df, independent_vars):
     """
