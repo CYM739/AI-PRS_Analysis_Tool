@@ -1,3 +1,5 @@
+# src/views/diagnostics_view.py
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -12,7 +14,7 @@ from logic.diagnostics import (
     perform_kfold_cv,
     perform_bootstrap_analysis,
     generate_diagnostics_report,
-    generate_full_project_report # Imported new function
+    generate_full_project_report
 )
 from logic.models import OLSWrapper
 
@@ -27,6 +29,10 @@ def render():
     # Filter for OLS models only
     wrapped_models = st.session_state.get('wrapped_models', {})
     ols_models = {k: v for k, v in wrapped_models.items() if isinstance(v, OLSWrapper)}
+    data_df = st.session_state.get('data_df', None)
+    
+    # Robustly get independent vars from session state (Source of Truth)
+    independent_vars = st.session_state.get('independent_vars', [])
     
     if not ols_models:
         st.warning("⚠️ No OLS (Polynomial Regression) models found. Diagnostics are not available for Machine Learning models like Random Forest or SVR as they do not make the same parametric assumptions.")
@@ -85,10 +91,53 @@ def render():
     # --- 1. Multicollinearity (VIF) ---
     with tab1:
         st.markdown("#### Variance Inflation Factor (VIF)")
-        st.caption("Checks if variables are redundant (High VIF > 5).")
+        
+        # The Toggle for Centering
+        use_centered = st.checkbox(
+            "Apply Mean-Centering (Fix Structural Multicollinearity)", 
+            value=True, 
+            help="Subtracts the mean from doses before calculating VIF. This removes artificial correlation between Dose and Dose^2."
+        )
+
         try:
-            vif_df = calculate_vif(model_wrapper)
-            
+            if use_centered and data_df is not None:
+                # ---------------------------------------------------------
+                # NEW: Show the Centered DataFrame for Verification
+                # ---------------------------------------------------------
+                
+                # If independent_vars list is empty, try to get from model, but prefer session state
+                effective_vars = independent_vars if independent_vars else model_wrapper.independent_vars
+                
+                # Create a temporary centered DF for display
+                df_display = data_df.copy()
+                means_dict = {}
+                
+                # Perform centering for display
+                for var in effective_vars:
+                    if var in df_display.columns and pd.api.types.is_numeric_dtype(df_display[var]):
+                        mean_val = df_display[var].mean()
+                        means_dict[var] = mean_val
+                        df_display[var] = df_display[var] - mean_val
+
+                with st.expander("🔎 Inspect Centered Data (Debugging)", expanded=False):
+                    st.caption("Verify that the columns below are centered (Mean ≈ 0). If they still look like original doses, the variable detection failed.")
+                    st.write("Calculated Means subtracted:", means_dict)
+                    st.dataframe(df_display[effective_vars].head(), use_container_width=True)
+
+                # ---------------------------------------------------------
+
+                # Pass raw data + robust vars to logic for centering
+                vif_df = calculate_vif(
+                    model_wrapper, 
+                    dataframe=data_df, 
+                    independent_vars=effective_vars
+                )
+                st.success("✅ **Centered VIFs Active**: These values represent the true independence of your variables, removing polynomial artifacts.")
+            else:
+                # Use default design matrix (Original Logic)
+                vif_df = calculate_vif(model_wrapper)
+                st.warning("⚠️ **Raw VIFs Active**: High values >10 here are likely due to 'Structural Multicollinearity' (Dose correlated with Dose^2). This is expected in polynomial models.")
+
             def highlight_vif(val):
                 color = 'red' if val > 10 else ('orange' if val > 5 else 'green')
                 return f'color: {color}; font-weight: bold'
@@ -177,7 +226,7 @@ def render():
              
         st.info("Note: This test is most relevant for time-series data or data with a sequential order.")
 
-    # --- 5. Predictive Uncertainty (NEW) ---
+    # --- 5. Predictive Uncertainty ---
     with tab5:
         st.markdown("### Quantifying Uncertainty")
         st.markdown("Evaluate how well the model generalizes (Cross-Validation) and how stable the coefficients are (Bootstrap).")
