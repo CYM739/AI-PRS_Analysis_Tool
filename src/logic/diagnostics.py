@@ -1,4 +1,3 @@
-# src/logic/diagnostics.py
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
@@ -9,9 +8,13 @@ from scipy import stats
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.utils import resample
+import io
 
 def calculate_vif(ols_model_wrapper):
-    """Calculates Variance Inflation Factor (VIF)."""
+    """
+    Calculates Variance Inflation Factor (VIF) for a statsmodels OLS result.
+    High VIF indicates multicollinearity.
+    """
     exog = ols_model_wrapper.model.model.exog
     exog_names = ols_model_wrapper.model.model.exog_names
     
@@ -19,6 +22,7 @@ def calculate_vif(ols_model_wrapper):
     for i, name in enumerate(exog_names):
         if name.lower() == 'intercept':
             continue
+            
         try:
             vif = variance_inflation_factor(exog, i)
             vif_data.append({'Feature': name, 'VIF': vif})
@@ -28,24 +32,32 @@ def calculate_vif(ols_model_wrapper):
     return pd.DataFrame(vif_data)
 
 def perform_normality_test(residuals):
-    """Performs Shapiro-Wilk or Jarque-Bera test."""
+    """
+    Performs Shapiro-Wilk test for normality of residuals.
+    """
     if len(residuals) > 5000:
-        stat, p_val = stats.jarque_bera(residuals)
+        shapiro_stat, shapiro_p = stats.jarque_bera(residuals)
         test_name = "Jarque-Bera"
     else:
-        stat, p_val = stats.shapiro(residuals)
+        shapiro_stat, shapiro_p = stats.shapiro(residuals)
         test_name = "Shapiro-Wilk"
-    return stat, p_val, test_name
+        
+    return shapiro_stat, shapiro_p, test_name
 
 def perform_heteroscedasticity_test(residuals, ols_model_wrapper):
-    """Performs Breusch-Pagan test."""
+    """
+    Performs Breusch-Pagan test for heteroscedasticity.
+    """
     exog = ols_model_wrapper.model.model.exog
     lm, lm_p_value, fvalue, f_p_value = het_breuschpagan(residuals, exog)
     return lm_p_value
 
 def perform_autocorrelation_test(residuals):
-    """Performs Durbin-Watson test."""
-    return durbin_watson(residuals)
+    """
+    Performs Durbin-Watson test for autocorrelation.
+    """
+    dw_stat = durbin_watson(residuals)
+    return dw_stat
 
 # --- NEW FUNCTIONS FOR UNCERTAINTY QUANTIFICATION ---
 
@@ -67,7 +79,6 @@ def perform_kfold_cv(model_wrapper, k=5):
         y_train, y_test = y[train_index], y[test_index]
         
         # Refit OLS on training fold
-        # Note: We fit directly using statsmodels OLS on the design matrix
         model_fold = sm.OLS(y_train, X_train).fit()
         preds = model_fold.predict(X_test)
         
@@ -119,13 +130,22 @@ def perform_bootstrap_analysis(model_wrapper, n_bootstraps=100):
         upper = np.percentile(values, 97.5)
         orig = original_params[i] if i < len(original_params) else 0
         
+        # FIX: Robust check for stability
+        # Stable if 0 is NOT between lower and upper
+        # Meaning: Both are positive OR Both are negative
+        if lower > 0 or upper < 0:
+            stable_icon = "✅"
+        else:
+            # 0 is inside the interval (lower <= 0 <= upper)
+            stable_icon = "⚠️"
+        
         stats_list.append({
             'Term': name,
             'Original': orig,
             'Boot Mean': values.mean(),
             '95% CI Lower': lower,
             '95% CI Upper': upper,
-            'Stable?': "✅" if (lower < 0 < upper) is False else "⚠️" # Check if 0 is in CI
+            'Stable?': stable_icon
         })
         
     return pd.DataFrame(stats_list)
@@ -133,7 +153,6 @@ def perform_bootstrap_analysis(model_wrapper, n_bootstraps=100):
 def generate_diagnostics_report(model_wrapper):
     """
     Aggregates all diagnostic tests into a formatted text report.
-    Includes Quick CV and Bootstrap results.
     """
     results = model_wrapper.model
     residuals = results.resid
@@ -146,7 +165,7 @@ def generate_diagnostics_report(model_wrapper):
     report.append("")
     
     # 1. Multicollinearity
-    report.append("1. MULTICOLLINEARITY (VIF)")
+    report.append("1. MULTICOLLINEARITY (Variance Inflation Factor)")
     report.append("--------------------------------------------------")
     try:
         vif_df = calculate_vif(model_wrapper)
@@ -184,11 +203,10 @@ def generate_diagnostics_report(model_wrapper):
     report.append(f"Durbin-Watson: {dw_stat:.4f}")
     report.append("")
 
-    # 5. Predictive Uncertainty (New)
+    # 5. Predictive Uncertainty
     report.append("5. PREDICTIVE UNCERTAINTY (CV & Bootstrap)")
     report.append("--------------------------------------------------")
     
-    # Quick CV (K=5)
     report.append("(A) 5-Fold Cross-Validation Results:")
     try:
         cv_res = perform_kfold_cv(model_wrapper, k=5)
@@ -198,11 +216,9 @@ def generate_diagnostics_report(model_wrapper):
         report.append(f"    CV Error: {e}")
     report.append("")
 
-    # Quick Bootstrap (N=50)
     report.append("(B) Bootstrap Analysis (N=50) - Coefficient Stability:")
     try:
         boot_df = perform_bootstrap_analysis(model_wrapper, n_bootstraps=50)
-        # Select columns to display
         disp_cols = ['Term', 'Original', '95% CI Lower', '95% CI Upper', 'Stable?']
         report.append(boot_df[disp_cols].to_string(index=False, float_format="{:.4f}".format))
         report.append("\n    Note: 'Stable?' checks if 95% CI excludes 0 (Significant).")
