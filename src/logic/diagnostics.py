@@ -9,6 +9,7 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.utils import resample
 import io
+from .models import OLSWrapper # Import OLSWrapper for type checking
 
 def calculate_vif(ols_model_wrapper):
     """
@@ -150,23 +151,20 @@ def perform_bootstrap_analysis(model_wrapper, n_bootstraps=100):
         
     return pd.DataFrame(stats_list)
 
-def generate_diagnostics_report(model_wrapper):
+def generate_diagnostics_report(model_wrapper, model_name="Model"):
     """
-    Aggregates all diagnostic tests into a formatted text report.
+    Aggregates all diagnostic tests into a formatted text report for a single model.
     """
     results = model_wrapper.model
     residuals = results.resid
     
     report = []
-    report.append("==================================================")
-    report.append("       OLS ASSUMPTION & UNCERTAINTY REPORT        ")
-    report.append("==================================================")
-    report.append(f"Model: {model_wrapper.formula}")
-    report.append("")
+    report.append(f"Model Name: {model_name}")
+    report.append(f"Formula: {model_wrapper.formula}")
+    report.append("-" * 50)
     
     # 1. Multicollinearity
     report.append("1. MULTICOLLINEARITY (Variance Inflation Factor)")
-    report.append("--------------------------------------------------")
     try:
         vif_df = calculate_vif(model_wrapper)
         report.append(vif_df.to_string(index=False, float_format="{:.4f}".format))
@@ -176,7 +174,6 @@ def generate_diagnostics_report(model_wrapper):
     
     # 2. Normality
     report.append("2. NORMALITY OF RESIDUALS")
-    report.append("--------------------------------------------------")
     stat, p_val, test_name = perform_normality_test(residuals)
     report.append(f"Test: {test_name}, p-value: {p_val:.4f}")
     if p_val < 0.05:
@@ -187,7 +184,6 @@ def generate_diagnostics_report(model_wrapper):
 
     # 3. Homoscedasticity
     report.append("3. HOMOSCEDASTICITY")
-    report.append("--------------------------------------------------")
     lm_p = perform_heteroscedasticity_test(residuals, model_wrapper)
     report.append(f"Breusch-Pagan p-value: {lm_p:.4f}")
     if lm_p < 0.05:
@@ -198,14 +194,12 @@ def generate_diagnostics_report(model_wrapper):
 
     # 4. Independence
     report.append("4. INDEPENDENCE (Autocorrelation)")
-    report.append("--------------------------------------------------")
     dw_stat = perform_autocorrelation_test(residuals)
     report.append(f"Durbin-Watson: {dw_stat:.4f}")
     report.append("")
 
     # 5. Predictive Uncertainty
     report.append("5. PREDICTIVE UNCERTAINTY (CV & Bootstrap)")
-    report.append("--------------------------------------------------")
     
     report.append("(A) 5-Fold Cross-Validation Results:")
     try:
@@ -227,7 +221,28 @@ def generate_diagnostics_report(model_wrapper):
         report.append(f"    Bootstrap Error: {e}")
 
     report.append("")
-    report.append("==================================================")
-    report.append("End of Report")
-    
     return "\n".join(report)
+
+def generate_full_project_report(wrapped_models):
+    """
+    Iterates through all OLS models in the project and generates a combined diagnostic report.
+    """
+    full_report = []
+    full_report.append("==================================================")
+    full_report.append("       FULL PROJECT OLS DIAGNOSTICS REPORT        ")
+    full_report.append("==================================================")
+    full_report.append("")
+    
+    ols_models = {k: v for k, v in wrapped_models.items() if isinstance(v, OLSWrapper)}
+    
+    if not ols_models:
+        return "No OLS models found in the project."
+        
+    for name, model in ols_models.items():
+        full_report.append(f"=== DIAGNOSTICS FOR MODEL: {name} ===")
+        model_report = generate_diagnostics_report(model, model_name=name)
+        full_report.append(model_report)
+        full_report.append("\n" + "="*50 + "\n")
+        
+    full_report.append("End of Project Report")
+    return "\n".join(full_report)
