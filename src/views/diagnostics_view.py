@@ -29,7 +29,7 @@ def render():
     # Filter for OLS models only
     wrapped_models = st.session_state.get('wrapped_models', {})
     ols_models = {k: v for k, v in wrapped_models.items() if isinstance(v, OLSWrapper)}
-    data_df = st.session_state.get('data_df', None)
+    data_df = st.session_state.get('exp_df', None)
     
     # Robustly get independent vars from session state (Source of Truth)
     independent_vars = st.session_state.get('independent_vars', [])
