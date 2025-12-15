@@ -88,11 +88,11 @@ def render():
         "5. Predictive Uncertainty"
     ])
 
-    # --- 1. Multicollinearity (VIF) ---
+# --- 1. Multicollinearity (VIF) ---
     with tab1:
         st.markdown("#### Variance Inflation Factor (VIF)")
         
-        # The Toggle for Centering
+        # Checkbox
         use_centered = st.checkbox(
             "Apply Mean-Centering (Fix Structural Multicollinearity)", 
             value=True, 
@@ -100,44 +100,52 @@ def render():
         )
 
         try:
-            if use_centered and data_df is not None:
-                # ---------------------------------------------------------
-                # NEW: Show the Centered DataFrame for Verification
-                # ---------------------------------------------------------
-                
-                # If independent_vars list is empty, try to get from model, but prefer session state
-                effective_vars = independent_vars if independent_vars else model_wrapper.independent_vars
-                
-                # Create a temporary centered DF for display
-                df_display = data_df.copy()
-                means_dict = {}
-                
-                # Perform centering for display
-                for var in effective_vars:
-                    if var in df_display.columns and pd.api.types.is_numeric_dtype(df_display[var]):
-                        mean_val = df_display[var].mean()
-                        means_dict[var] = mean_val
-                        df_display[var] = df_display[var] - mean_val
+            # Prepare variable list
+            effective_vars = independent_vars if independent_vars else model_wrapper.independent_vars
 
-                with st.expander("🔎 Inspect Centered Data (Debugging)", expanded=False):
-                    st.caption("Verify that the columns below are centered (Mean ≈ 0). If they still look like original doses, the variable detection failed.")
-                    st.write("Calculated Means subtracted:", means_dict)
-                    st.dataframe(df_display[effective_vars].head(), use_container_width=True)
+            # LOGIC SPLIT: Explicitly handle missing data case
+            if use_centered:
+                if data_df is not None:
+                    # ---------------------------------------------------------
+                    # SHOW PREVIEW (Only if data exists)
+                    # ---------------------------------------------------------
+                    df_display = data_df.copy()
+                    means_dict = {}
+                    
+                    # Perform centering for display
+                    for var in effective_vars:
+                        if var in df_display.columns and pd.api.types.is_numeric_dtype(df_display[var]):
+                            mean_val = df_display[var].mean()
+                            means_dict[var] = mean_val
+                            df_display[var] = df_display[var] - mean_val
 
-                # ---------------------------------------------------------
+                    # Force expanded=True so you definitely see it
+                    with st.expander("🔎 Inspect Centered Data (Debugging)", expanded=True):
+                        st.caption("These are the values being used for VIF calculation. They should be centered around 0.")
+                        st.write("**Means subtracted:**", means_dict)
+                        # Show only relevant columns to avoid clutter
+                        cols_to_show = [c for c in effective_vars if c in df_display.columns]
+                        st.dataframe(df_display[cols_to_show].head(), use_container_width=True)
 
-                # Pass raw data + robust vars to logic for centering
-                vif_df = calculate_vif(
-                    model_wrapper, 
-                    dataframe=data_df, 
-                    independent_vars=effective_vars
-                )
-                st.success("✅ **Centered VIFs Active**: These values represent the true independence of your variables, removing polynomial artifacts.")
+                    # Calculate Centered VIF
+                    vif_df = calculate_vif(
+                        model_wrapper, 
+                        dataframe=data_df, 
+                        independent_vars=effective_vars
+                    )
+                    st.success("✅ **Centered VIFs Active**")
+                    
+                else:
+                    # Data is missing, but user asked for centering
+                    st.warning("⚠️ **Cannot Apply Centering**: The original dataset (`data_df`) is missing from the session state. Showing Raw VIFs instead.")
+                    vif_df = calculate_vif(model_wrapper)
+
             else:
-                # Use default design matrix (Original Logic)
+                # User unchecked the box
+                st.info("ℹ️ **Raw VIFs Active**: High values are expected for polynomial terms.")
                 vif_df = calculate_vif(model_wrapper)
-                st.warning("⚠️ **Raw VIFs Active**: High values >10 here are likely due to 'Structural Multicollinearity' (Dose correlated with Dose^2). This is expected in polynomial models.")
 
+            # Display VIF Table
             def highlight_vif(val):
                 color = 'red' if val > 10 else ('orange' if val > 5 else 'green')
                 return f'color: {color}; font-weight: bold'
@@ -147,9 +155,9 @@ def render():
                             .format({"VIF": "{:.2f}"}),
                 use_container_width=True
             )
+
         except Exception as e:
             st.error(f"Could not calculate VIF: {e}")
-
     # --- 2. Normality of Residuals ---
     with tab2:
         st.markdown("#### Normality of Residuals")
