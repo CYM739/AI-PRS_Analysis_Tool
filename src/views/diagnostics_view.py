@@ -9,7 +9,8 @@ from logic.diagnostics import (
     calculate_vif, 
     perform_normality_test, 
     perform_heteroscedasticity_test,
-    perform_autocorrelation_test
+    perform_autocorrelation_test,
+    generate_diagnostics_report
 )
 from logic.models import OLSWrapper
 
@@ -30,8 +31,24 @@ def render():
         return
 
     # Select Model
-    selected_model_name = st.selectbox("Select OLS Model to Diagnose", list(ols_models.keys()))
+    col_sel, col_btn = st.columns([3, 1])
+    with col_sel:
+        selected_model_name = st.selectbox("Select OLS Model to Diagnose", list(ols_models.keys()))
+    
     model_wrapper = ols_models[selected_model_name]
+    
+    # --- Download Report Button ---
+    with col_btn:
+        st.write("") # Spacing
+        st.write("") 
+        report_text = generate_diagnostics_report(model_wrapper)
+        st.download_button(
+            label="📄 Download Full Report",
+            data=report_text,
+            file_name=f"diagnostics_report_{selected_model_name}.txt",
+            mime="text/plain",
+            help="Download a text file containing the results of all diagnostic tests."
+        )
     
     # Extract data from the model wrapper
     results = model_wrapper.model # statsmodels ResultsWrapper
