@@ -181,3 +181,62 @@ def render():
              st.warning("⚠️ **Possible Autocorrelation**: Value is far from 2.0 (Range: 0-4).")
              
         st.info("Note: This test is most relevant for time-series data or data with a sequential order (e.g., pipetting order).")
+# --- 5. Predictive Uncertainty (NEW) ---
+    with tab5:
+        st.markdown("### Quantifying Uncertainty")
+        st.markdown("Evaluate how well the model generalizes (Cross-Validation) and how stable the coefficients are (Bootstrap).")
+        
+        col_cv, col_boot = st.columns(2)
+        
+        # --- K-Fold CV Section ---
+        with col_cv:
+            with st.container(border=True):
+                st.markdown("#### 🔄 Cross-Validation (K-Fold)")
+                st.info("Splits data into K parts to estimate 'Out-of-Sample' error.")
+                k_folds = st.number_input("Number of Folds (K)", min_value=2, max_value=20, value=5)
+                
+                if st.button("Run K-Fold CV"):
+                    with st.spinner(f"Running {k_folds}-Fold CV..."):
+                        try:
+                            cv_res = perform_kfold_cv(model_wrapper, k=k_folds)
+                            st.write("##### Results:")
+                            st.metric("Avg RMSE", f"{cv_res['avg_rmse']:.4f}", delta_color="inverse")
+                            st.caption(f"(Std Dev: {cv_res['std_rmse']:.4f})")
+                            st.metric("Avg R²", f"{cv_res['avg_r2']:.4f}")
+                            st.caption(f"(Std Dev: {cv_res['std_r2']:.4f})")
+                        except Exception as e:
+                            st.error(f"CV Failed: {e}")
+
+        # --- Bootstrap Section ---
+        with col_boot:
+            with st.container(border=True):
+                st.markdown("#### 🎲 Bootstrap Analysis")
+                st.info("Resamples data to find 95% Confidence Intervals (CI) for coefficients.")
+                n_boot = st.number_input("Number of Resamples", min_value=10, max_value=1000, value=100)
+                
+                if st.button("Run Bootstrap"):
+                    with st.spinner(f"Running {n_boot} bootstraps..."):
+                        try:
+                            boot_df = perform_bootstrap_analysis(model_wrapper, n_bootstraps=n_boot)
+                            st.write("##### Coefficient Stability:")
+                            
+                            # Styling the dataframe
+                            def highlight_unstable(row):
+                                # If CI crosses 0 (Lower < 0 < Upper), it might be insignificant
+                                if row['95% CI Lower'] < 0 and row['95% CI Upper'] > 0:
+                                    return ['background-color: #fff3cd'] * len(row) # Yellow warning
+                                return [''] * len(row)
+
+                            st.dataframe(
+                                boot_df[['Term', 'Original', '95% CI Lower', '95% CI Upper', 'Stable?']]
+                                .style.format({
+                                    'Original': '{:.4f}',
+                                    '95% CI Lower': '{:.4f}',
+                                    '95% CI Upper': '{:.4f}'
+                                }),
+                                use_container_width=True,
+                                hide_index=True
+                            )
+                            st.caption("⚠️ Yellow rows indicate coefficients where the 95% CI crosses zero (potentially insignificant).")
+                        except Exception as e:
+                            st.error(f"Bootstrap Failed: {e}")
