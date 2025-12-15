@@ -11,22 +11,55 @@ from sklearn.utils import resample
 import io
 from .models import OLSWrapper # Import OLSWrapper for type checking
 
-def calculate_vif(ols_model_wrapper):
+def calculate_vif(model_wrapper, dataframe=None, independent_vars=None):
     """
-    Calculates Variance Inflation Factor (VIF) for a statsmodels OLS result.
-    High VIF indicates multicollinearity.
-    """
-    exog = ols_model_wrapper.model.model.exog
-    exog_names = ols_model_wrapper.model.model.exog_names
+    Calculates Variance Inflation Factor (VIF).
     
+    If 'dataframe' and 'independent_vars' are provided, this function 
+    PERFORMS MEAN CENTERING on the data before calculating VIF.
+    This removes 'Structural Multicollinearity' (caused by x and x^2) 
+    to show the true underlying correlation between drugs.
+    """
+    # A. If data is provided, build a CENTERED Design Matrix (The Fix)
+    if dataframe is not None and independent_vars is not None:
+        # 1. Copy and Center the continuous variables
+        df_centered = dataframe.copy()
+        for var in independent_vars:
+            if pd.api.types.is_numeric_dtype(df_centered[var]):
+                mean_val = df_centered[var].mean()
+                df_centered[var] = df_centered[var] - mean_val
+        
+        # 2. Re-create polynomial terms (Squared, Interaction) using centered data
+        _add_polynomial_terms(df_centered, independent_vars)
+        
+        # 3. Create the Design Matrix
+        # Filter: Take independent vars + generated poly terms
+        # We look for cols that match independent vars OR contain '_sq' / '*'
+        target_cols = independent_vars + [c for c in df_centered.columns if '_sq' in c or '*' in c]
+        
+        # Ensure we only use columns that exist
+        target_cols = [c for c in target_cols if c in df_centered.columns]
+        
+        X = df_centered[target_cols].dropna()
+        X = add_constant(X)
+    
+    # B. Default: Use the existing Design Matrix from the fitted model (Uncentered)
+    else:
+        X = pd.DataFrame(
+            model_wrapper.model.model.exog, 
+            columns=model_wrapper.model.model.exog_names
+        )
+
+    # Calculate VIF
     vif_data = []
-    for i, name in enumerate(exog_names):
-        if name.lower() == 'intercept':
+    for i, name in enumerate(X.columns):
+        if name.lower() == 'const' or name.lower() == 'intercept':
             continue
             
         try:
-            vif = variance_inflation_factor(exog, i)
-            vif_data.append({'Feature': name, 'VIF': vif})
+            # We use X.values to ensure compatibility
+            val = variance_inflation_factor(X.values, i)
+            vif_data.append({'Feature': name, 'VIF': val})
         except Exception:
             vif_data.append({'Feature': name, 'VIF': np.nan})
         
