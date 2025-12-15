@@ -5,8 +5,8 @@ import os
 import multiprocessing
 import json
 import sys
-# Added diagnostics_view to imports
-from views import library_view, plotting_view, optimizer_view, ai_optimizer_view, evaluation_view, synergy_view, diagnostics_view
+# Removed evaluation_view from imports
+from views import library_view, plotting_view, optimizer_view, ai_optimizer_view, synergy_view, diagnostics_view
 from utils import state_management
 from logic.models import RandomForestWrapper
 
@@ -56,17 +56,21 @@ def main():
 
     st.header("Analysis & Visualization")
     
-    # --- Main Application Body (Tabs) ---
     analysis_is_done = st.session_state.get('analysis_done', False)
     
-    # Updated Tab List to include Diagnostics
+    # --- UPDATED TAB LIST (Removed 'Actual vs. Predicted') ---
     tab_list = [
-        "📚 Project Library", "🧊 Plotting Tools", "🔍 Diagnostics", "🎯 Optimizer",
-        "🤖 AI Optimizer", "🤝 Synergy Analysis", "✅ Actual vs. Predicted",
+        "📚 Project Library", 
+        "🧊 Plotting Tools", 
+        "🔍 Diagnostics", 
+        "🎯 Optimizer",
+        "🤖 AI Optimizer", 
+        "🤝 Synergy Analysis", 
         "💾 Session State"
     ]
-    # Unpacked 8 tabs now
-    tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs(tab_list)
+    
+    # Unpack 7 tabs (previously 8)
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(tab_list)
 
     with tab1:
         library_view.render()
@@ -77,7 +81,7 @@ def main():
         else:
             st.info("Load and analyze a project from the 'Project Library' to use the plotting tools.")
 
-    # New Diagnostics Tab
+    # Diagnostics Tab (Now covers the old Evaluation features + more)
     with tab3:
         if analysis_is_done:
             diagnostics_view.render()
@@ -103,17 +107,15 @@ def main():
             ai_optimizer_view.render()
         else:
             st.info("Load and analyze a project from the 'Project Library' to use the AI optimizer.")
+            
     with tab6:
         if analysis_is_done:
             synergy_view.render()
         else:
             st.info("Load and analyze a project from the 'Project Library' to perform synergy analysis.")
+            
+    # Session State Tab (Renumbered to 7)
     with tab7:
-        if analysis_is_done:
-            evaluation_view.render()
-        else:
-            st.info("Load and analyze a project from the 'Project Library' to view model evaluations.")
-    with tab8:
         render_session_state_tab()
 
 def render_session_state_tab():
