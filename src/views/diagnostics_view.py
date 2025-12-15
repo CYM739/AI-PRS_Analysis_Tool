@@ -11,7 +11,8 @@ from logic.diagnostics import (
     perform_autocorrelation_test,
     perform_kfold_cv,
     perform_bootstrap_analysis,
-    generate_diagnostics_report
+    generate_diagnostics_report,
+    generate_full_project_report # Imported new function
 )
 from logic.models import OLSWrapper
 
@@ -31,22 +32,37 @@ def render():
         st.warning("⚠️ No OLS (Polynomial Regression) models found. Diagnostics are not available for Machine Learning models like Random Forest or SVR as they do not make the same parametric assumptions.")
         return
 
-    # Select Model
+    # --- TOP LEVEL ACTIONS ---
+    col_dl_all, _ = st.columns([1, 2])
+    with col_dl_all:
+        if st.button("📥 Download Diagnostics for ALL Models"):
+            with st.spinner("Generating combined report for all OLS models..."):
+                full_project_report = generate_full_project_report(wrapped_models)
+                st.download_button(
+                    label="📄 Save Full Project Report",
+                    data=full_project_report,
+                    file_name="full_project_diagnostics_report.txt",
+                    mime="text/plain",
+                    help="Download a single text file containing diagnostic results for every OLS model in the project."
+                )
+    st.divider()
+
+    # Select Model for Interactive View
     col_sel, col_btn = st.columns([3, 1])
     with col_sel:
-        selected_model_name = st.selectbox("Select OLS Model to Diagnose", list(ols_models.keys()))
+        selected_model_name = st.selectbox("Select Single Model to View", list(ols_models.keys()))
     
     model_wrapper = ols_models[selected_model_name]
     
-    # --- Download Report Button ---
+    # --- Download Single Report Button ---
     with col_btn:
         st.write("") # Spacing
         st.write("") 
-        if st.button("📄 Generate Report"):
-             with st.spinner("Generating full diagnostic report..."):
-                report_text = generate_diagnostics_report(model_wrapper)
+        if st.button("📄 Report (This Model)"):
+             with st.spinner("Generating diagnostic report..."):
+                report_text = generate_diagnostics_report(model_wrapper, model_name=selected_model_name)
                 st.download_button(
-                    label="Download Report",
+                    label="Download",
                     data=report_text,
                     file_name=f"diagnostics_report_{selected_model_name}.txt",
                     mime="text/plain"
@@ -58,7 +74,6 @@ def render():
     fitted_values = results.fittedvalues
     
     # --- Tabbed Interface for Diagnostics ---
-    # FIX: Explicitly create 5 tabs here
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "1. Multicollinearity", 
         "2. Normality", 
@@ -193,7 +208,7 @@ def render():
             with st.container(border=True):
                 st.markdown("#### 🎲 Bootstrap Analysis")
                 st.info("Resamples data to find 95% Confidence Intervals (CI) for coefficients.")
-                n_boot = st.number_input("Number of Resamples", min_value=10, max_value=1000, value=100)
+                n_boot = st.number_input("Number of Resamples", min_value=10, max_value=1000, value=1000)
                 
                 if st.button("Run Bootstrap"):
                     with st.spinner(f"Running {n_boot} bootstraps..."):
