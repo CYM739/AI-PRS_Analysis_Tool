@@ -1,6 +1,7 @@
 # src/views/synergy_view.py
 import streamlit as st
 import pandas as pd
+import numpy as np
 from logic.data_processing import calculate_synergy
 from logic.plotting import plot_synergy_heatmap
 from utils.ui_helpers import format_variable_options
@@ -10,24 +11,38 @@ def validate_synergy_data(df, drug1_col, drug2_col):
     """
     Checks if the dataframe contains the necessary single-agent control data.
     """
-    drug1_doses = df[drug1_col].unique()
-    drug2_doses = df[drug2_col].unique()
+    # Convert to numeric for validation to match processing logic
+    d1_vals = pd.to_numeric(df[drug1_col], errors='coerce').fillna(0)
+    d2_vals = pd.to_numeric(df[drug2_col], errors='coerce').fillna(0)
     
-    # Check if a '0' dose exists for both drugs (handles float/int 0)
-    has_drug1_control = any(d == 0 for d in drug1_doses)
-    has_drug2_control = any(d == 0 for d in drug2_doses)
+    # Check for 0 presence
+    has_drug1_zero = (np.abs(d1_vals) < 1e-6).any()
+    has_drug2_zero = (np.abs(d2_vals) < 1e-6).any()
     
-    if not has_drug1_control or not has_drug2_control:
-        missing = []
-        if not has_drug1_control:
-            missing.append(f"a zero-dose row for '{drug1_col}'")
-        if not has_drug2_control:
-            missing.append(f"a zero-dose row for '{drug2_col}'")
-        
-        st.warning(f"⚠️ **Data Validation Warning:** The synergy calculation requires single-agent controls. Your dataset appears to be missing { ' and '.join(missing) }. The plot may be empty or incorrect.")
+    if not has_drug1_zero or not has_drug2_zero:
+        st.error(f"⚠️ **Critical Error:** Missing '0' dose control. The dataset must contain data where {drug1_col}=0 and {drug2_col}=0.")
         return False
-    return True
+        
+    # Check for Single Agent Rows (Rows where one drug is >0 and other is 0)
+    # This detects the "Only combination points" problem
+    d1_single_agent = df[(d1_vals > 1e-6) & (np.abs(d2_vals) < 1e-6)]
+    d2_single_agent = df[(np.abs(d1_vals) < 1e-6) & (d2_vals > 1e-6)]
 
+    if d1_single_agent.empty or d2_single_agent.empty:
+        missing = []
+        if d1_single_agent.empty: missing.append(f"Single-agent {drug1_col} (where {drug2_col}=0)")
+        if d2_single_agent.empty: missing.append(f"Single-agent {drug2_col} (where {drug1_col}=0)")
+        
+        st.warning(f"""
+        ⚠️ **Data Warning: Missing Single-Agent Arms**
+        Your data seems to contain combinations, but is missing the pure single-agent experiments:
+        - Missing: **{', '.join(missing)}**
+        
+        Without these reference points, the synergy calculation (which compares Combination vs Single Agent) will result in empty (NaN) cells for most of the matrix.
+        """)
+        # We don't return False here because maybe they only have partial data, but we warn strongly.
+        
+    return True
 
 def render():
     """Renders all UI components and logic for the Synergy Analysis tab."""
@@ -64,7 +79,6 @@ def render():
         else:
              st.markdown(f"The analysis will use the raw '{effect}' values. Ensure higher values represent greater drug effect (Inhibition).")
 
-        # Refined Model Selection
         synergy_model_display = st.selectbox(
             "Select Synergy Model",
             ["Gamma (Recommended)", "HSA (Excess Highest Single Agent)"],
@@ -72,24 +86,20 @@ def render():
         )
         synergy_model_key = synergy_model_display.split(" ")[0].lower()
 
-        # Dynamic Explanation
         if synergy_model_key == 'gamma':
             st.success("""
             **Gamma Score Interpretation (Ratio):**
-            * **< 0.95:** Synergistic (Observed survival is significantly lower than expected).
+            * **< 0.95:** Synergistic.
             * **~ 1.0:** Additive.
             * **> 1.0:** Antagonistic.
-            *(Calculated as Observed Viability / Expected HSA Viability)*
             """)
         elif synergy_model_key == 'hsa':
             st.success("""
             **Excess HSA Interpretation (Difference):**
-            * **> 0:** Synergistic (Observed inhibition is higher than the best single drug).
+            * **> 0:** Synergistic.
             * **< 0:** Antagonistic.
-            *(Calculated as Observed Inhibition - Max Single Agent Inhibition)*
             """)
 
-        # Perform data validation before showing the button
         validate_synergy_data(st.session_state.exp_df, drug1, drug2)
 
     if st.button("Calculate Synergy", type="primary"):
@@ -97,11 +107,9 @@ def render():
             try:
                 df_synergy = st.session_state.exp_df.copy()
                 
-                # Standardize to Inhibition for the function call
                 if transform_data:
-                    # Check if data is percentage (0-100)
                     if df_synergy[effect].max() > 1.0:
-                         st.warning("Data appears to be in percentage (0-100). Treating as 0-1 fraction for calculation may yield incorrect Gamma scores.")
+                         st.warning("Data appears to be in percentage (0-100). Treating as 0-1 fraction.")
                     df_synergy[effect] = 1 - df_synergy[effect]
 
                 synergy_matrix = calculate_synergy(
@@ -118,7 +126,6 @@ def render():
 
             except Exception as e:
                 st.error(f"An error occurred during calculation: {e}")
-                st.error("Please ensure your data is formatted correctly (e.g., includes single agent controls).")
                 clear_synergy_results()
     
     if st.session_state.get('synergy_matrix') is not None and not st.session_state.synergy_matrix.empty:
@@ -127,11 +134,14 @@ def render():
         drug1, drug2 = st.session_state.synergy_drugs
         model_name = st.session_state.get('synergy_model_name', 'Synergy')
         
-        # --- NEW: Data Table Section ---
-        with st.expander("🔢 Raw Synergy Data (Matrix)", expanded=False):
+        # Check for empty calculations
+        nan_count = synergy_matrix.isna().sum().sum()
+        total_cells = synergy_matrix.size
+        if nan_count > 0:
+            st.warning(f"⚠️ **Incomplete Result:** {nan_count}/{total_cells} cells are empty (NaN). This confirms that Single-Agent reference data for those specific dose combinations was missing from the input.")
+
+        with st.expander("🔢 Raw Synergy Data (Matrix)", expanded=True):
             st.dataframe(synergy_matrix, use_container_width=True)
-            
-            # Download Button
             csv = synergy_matrix.to_csv().encode('utf-8')
             st.download_button(
                 label="Download Synergy Matrix as CSV",
@@ -141,7 +151,6 @@ def render():
             )
 
         st.subheader("Synergy Heatmap")
-
         descriptions = st.session_state.variable_descriptions
         drug1_desc = descriptions.get(drug1, drug1)
         drug2_desc = descriptions.get(drug2, drug2)
