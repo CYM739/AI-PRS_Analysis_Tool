@@ -406,20 +406,43 @@ def plot_pareto_front(results_list, component1, component2, variable_description
     
 def plot_synergy_heatmap(synergy_matrix, drug1_name, drug2_name, model_name):
     """
-    Generates an interactive heatmap for the synergy scores.
+    Generates an interactive 2D Heatmap for synergy scores.
+    Corrects "squeezed" plots by treating dose axes as categorical labels.
     """
-    fig = go.Figure(data=go.Contour(
+    # Convert index (Drug 1 Doses) and columns (Drug 2 Doses) to strings.
+    # This forces Plotly to space them equally (Categorical Axis) instead of numerically.
+    # We round to 4 decimal places to avoid messy float labels (e.g., 0.300000004).
+    y_labels = [str(round(val, 4)) if isinstance(val, (float, int)) else str(val) for val in synergy_matrix.index]
+    x_labels = [str(round(val, 4)) if isinstance(val, (float, int)) else str(val) for val in synergy_matrix.columns]
+
+    # Determine colorscale based on model
+    # Gamma: < 1 is Synergy (Red), > 1 is Antagonism (Blue)
+    # HSA: > 0 is Synergy (Red), < 0 is Antagonism (Blue)
+    # We use 'RdBu' (Red-Blue). 
+    # Usually Red=Hot/High, Blue=Cold/Low. 
+    # For Gamma, Synergy is Low. So we might want to reverse it ('RdBu_r') if we want Red=Synergy.
+    
+    heatmap_trace = go.Heatmap(
         z=synergy_matrix.values,
-        x=synergy_matrix.columns,
-        y=synergy_matrix.index,
-        colorscale='RdBu',
-        zmid=0,
-        colorbar=dict(title=f'{model_name} Score')
-    ))
+        x=x_labels,
+        y=y_labels,
+        colorscale='RdBu_r', # Red (Low values/Synergy) to Blue (High values/Antagonism)
+        colorbar=dict(title=f'{model_name} Score'),
+        hovertemplate=(
+            f"<b>{drug2_name} (X):</b> %{{x}}<br>"
+            f"<b>{drug1_name} (Y):</b> %{{y}}<br>"
+            f"<b>Score:</b> %{{z:.4f}}<extra></extra>"
+        )
+    )
+
+    fig = go.Figure(data=heatmap_trace)
+
     fig.update_layout(
-        title=f'<b>Drug Combination Synergy Map ({model_name})</b>',
+        title=f'<b>Drug Combination Synergy Matrix ({model_name})</b>',
         xaxis_title=f'Dose: {drug2_name}',
         yaxis_title=f'Dose: {drug1_name}',
-        height=600
+        height=600,
+        xaxis=dict(type='category'), # Explicitly force categorical axis
+        yaxis=dict(type='category')  # Explicitly force categorical axis
     )
     return fig
