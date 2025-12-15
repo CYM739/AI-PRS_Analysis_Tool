@@ -1,16 +1,18 @@
+# src/logic/diagnostics.py
 import pandas as pd
 import numpy as np
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 from statsmodels.stats.diagnostic import het_breuschpagan
 from statsmodels.stats.stattools import durbin_watson
+from statsmodels.tools.tools import add_constant 
 from scipy import stats
 from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.utils import resample
 import io
-from .models import OLSWrapper # Import OLSWrapper for type 
-from .helpers import _add_polynomial_terms
+from .models import OLSWrapper
+from .helpers import _add_polynomial_terms 
 
 def calculate_vif(model_wrapper, dataframe=None, independent_vars=None):
     """
