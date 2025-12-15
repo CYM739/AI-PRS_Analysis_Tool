@@ -13,20 +13,12 @@ from .helpers import _add_polynomial_terms
 def analyze_csv(full_dataframe):
     """
     Inspects the input dataframe to prepare it for analysis.
-    This function intelligently:
-    1.  Detects if the first row contains variable descriptions.
-    2.  Identifies independent vs. dependent variables based on naming conventions.
-    3.  Cleans numeric columns that may have been read as strings due to formatting (e.g., commas).
-    4.  Calculates key statistics (min, max, second min) for each variable.
-    5.  Extracts all unique values for use in dropdowns.
-    6.  Automatically detects which independent variables are binary (contain only 0s and 1s).
     """
     first_row = full_dataframe.iloc[0]
     is_description_row = any(isinstance(item, str) for item in first_row)
 
     all_vars = full_dataframe.columns.tolist()
 
-    # Separate data from descriptions if the first row is descriptive text.
     if is_description_row:
         descriptions_row = first_row
         data_df = full_dataframe.iloc[1:].reset_index(drop=True)
@@ -118,7 +110,6 @@ def run_analysis(dataframe, independent_vars, dependent_var, model_type, model_p
 
     elif model_type == 'Random Forest':
         rf_wrapper = RandomForestWrapper(independent_vars)
-        # Pass variable_descriptions to the fit method
         model_params['variable_descriptions'] = variable_descriptions
         rf_wrapper.fit(dataframe, dependent_var, **model_params)
         return rf_wrapper
@@ -145,7 +136,7 @@ def predict_surface(model, all_alphabet_vars, x_var, y_var, fixed_vars_dict, x_r
 def generate_optimization_report(report_data, variable_descriptions):
     """
     Generates a professional, well-formatted .docx report from the results of an
-    optimization run. The report includes model details, settings, and final results.
+    optimization run.
     """
     doc = Document()
     doc.add_heading('Optimization Run Report', 0)
@@ -258,45 +249,73 @@ def generate_optimization_report(report_data, variable_descriptions):
 
 def calculate_synergy(dataframe, drug1_name, drug2_name, effect_name, model='gamma'):
     """
-    Dispatcher function to calculate drug synergy using a specified model.
+    Calculates drug synergy using the specified model.
+    Supported models: 'gamma', 'hsa'.
+    
+    Assumption: Input 'dataframe' contains 'Inhibition' data (0 to 1), where 1 is max effect.
+    If 'gamma' is selected, this function internally converts Inhibition to Viability (1 - Inhibition)
+    to perform the standard Gamma ratio calculation (Viability_Obs / Viability_Exp).
     """
+    # Create Response Matrix (Inhibition)
+    # Sort axis to ensure index 0 is at the top/left for broadcasting
     response_matrix = dataframe.pivot_table(
         index=drug1_name, columns=drug2_name, values=effect_name
+    ).sort_index(axis=0).sort_index(axis=1)
+
+    # Validation: Ensure zero-dose controls exist
+    if 0 not in response_matrix.index or 0 not in response_matrix.columns:
+        raise ValueError("Missing single-agent controls (dose=0) for one or both drugs.")
+
+    # Extract Single Agent Responses (Inhibition)
+    # drug1_single: Column where Drug2 dose is 0
+    drug1_single = response_matrix[0] 
+    # drug2_single: Row where Drug1 dose is 0
+    drug2_single = response_matrix.loc[0]
+
+    # Vectorized broadcasting to create expected grids
+    # d1_grid: Drug 1 effect projected across columns (Drug 2 axis)
+    d1_grid = pd.DataFrame(
+        np.tile(drug1_single.values[:, None], (1, response_matrix.shape[1])), 
+        index=response_matrix.index, columns=response_matrix.columns
+    )
+    # d2_grid: Drug 2 effect projected across rows (Drug 1 axis)
+    d2_grid = pd.DataFrame(
+        np.tile(drug2_single.values[None, :], (response_matrix.shape[0], 1)), 
+        index=response_matrix.index, columns=response_matrix.columns
     )
 
-    if model.lower() == 'gamma':
-        expected_matrix = _calculate_hsa_expected(response_matrix)
+    if model.lower() == 'hsa':
+        # === Excess HSA (Highest Single Agent) ===
+        # Formula: Synergy = Observed_Inhibition - Max(Inhibition_D1, Inhibition_D2)
+        # Result > 0 indicates Synergy (Observed effect is greater than best single agent)
+        expected_matrix = np.maximum(d1_grid, d2_grid)
         synergy_matrix = response_matrix - expected_matrix
         return synergy_matrix
-    elif model.lower() == 'hsa':
-        expected_matrix = _calculate_hsa_expected(response_matrix)
-        synergy_matrix = response_matrix - expected_matrix
+
+    elif model.lower() == 'gamma':
+        # === Gamma Score (Nature Communications 2025 algorithm) ===
+        # Formula: Gamma = Observed_Viability / Expected_Viability_HSA
+        # Note: We must convert Inhibition inputs back to Viability (1 - Inhibition)
+        
+        # 1. Convert to Viability (Survival)
+        V_obs = 1 - response_matrix
+        V_d1 = 1 - d1_grid
+        V_d2 = 1 - d2_grid
+        
+        # 2. Calculate Expected Viability under HSA
+        # The "best" single agent for survival is the one with LOWER survival (stronger kill).
+        # So Expected Viability is min(V_d1, V_d2)
+        V_expected = np.minimum(V_d1, V_d2)
+        
+        # 3. Calculate Ratio
+        # Gamma < 1.0 (or 0.95 per paper) indicates Synergy (Observed survival < Expected)
+        epsilon = 1e-9 # Prevent division by zero
+        synergy_matrix = V_obs / (V_expected + epsilon)
+        
         return synergy_matrix
-    elif model.lower() == 'loewe':
-        return _calculate_loewe_placeholder(response_matrix)
+
     else:
-        raise ValueError(f"Unknown synergy model: {model}")
-
-def _calculate_hsa_expected(response_matrix):
-    """
-    Calculates the expected response matrix based on the Highest Single Agent (HSA) model.
-    """
-    drug1_effects = response_matrix.loc[:, 0]
-    drug2_effects = response_matrix.loc[0, :]
-
-    expected_matrix = pd.DataFrame(index=response_matrix.index, columns=response_matrix.columns)
-    for d1_dose in response_matrix.index:
-        for d2_dose in response_matrix.columns:
-            expected_matrix.loc[d1_dose, d2_dose] = max(drug1_effects[d1_dose], drug2_effects[d2_dose])
-
-    return expected_matrix
-
-def _calculate_loewe_placeholder(response_matrix):
-    """
-    Placeholder for the Loewe Additivity model.
-    """
-    synergy_matrix = response_matrix - response_matrix
-    return synergy_matrix
+        raise ValueError(f"Unknown or unsupported synergy model: {model}")
 
 def generate_combined_predictions_csv(wrapped_models, data_df, independent_vars):
     """
