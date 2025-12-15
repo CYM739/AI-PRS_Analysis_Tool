@@ -98,9 +98,8 @@ def render():
                 df_synergy = st.session_state.exp_df.copy()
                 
                 # Standardize to Inhibition for the function call
-                # (The function handles conversion back to viability for Gamma if needed)
                 if transform_data:
-                    # Check if data is percentage (0-100) or fraction (0-1)
+                    # Check if data is percentage (0-100)
                     if df_synergy[effect].max() > 1.0:
                          st.warning("Data appears to be in percentage (0-100). Treating as 0-1 fraction for calculation may yield incorrect Gamma scores.")
                     df_synergy[effect] = 1 - df_synergy[effect]
@@ -124,17 +123,28 @@ def render():
     
     if st.session_state.get('synergy_matrix') is not None and not st.session_state.synergy_matrix.empty:
         st.write("---")
-        st.subheader("Synergy Heatmap")
         synergy_matrix = st.session_state.synergy_matrix
         drug1, drug2 = st.session_state.synergy_drugs
         model_name = st.session_state.get('synergy_model_name', 'Synergy')
+        
+        # --- NEW: Data Table Section ---
+        with st.expander("🔢 Raw Synergy Data (Matrix)", expanded=False):
+            st.dataframe(synergy_matrix, use_container_width=True)
+            
+            # Download Button
+            csv = synergy_matrix.to_csv().encode('utf-8')
+            st.download_button(
+                label="Download Synergy Matrix as CSV",
+                data=csv,
+                file_name=f'synergy_matrix_{model_name}.csv',
+                mime='text/csv',
+            )
+
+        st.subheader("Synergy Heatmap")
 
         descriptions = st.session_state.variable_descriptions
         drug1_desc = descriptions.get(drug1, drug1)
         drug2_desc = descriptions.get(drug2, drug2)
 
-        # Note: plot_synergy_heatmap logic should handle the color scale.
-        # For Gamma: Blue (Low) is Synergy. For HSA: Red (High) is Synergy.
-        # You may need to adjust plotting_view.py separately if the colors are hardcoded.
         fig = plot_synergy_heatmap(synergy_matrix, drug1_desc, drug2_desc, model_name)
         st.plotly_chart(fig, use_container_width=True)
