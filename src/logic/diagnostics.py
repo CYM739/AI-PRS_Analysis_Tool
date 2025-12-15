@@ -9,7 +9,8 @@ from sklearn.model_selection import KFold
 from sklearn.metrics import mean_squared_error, r2_score
 from sklearn.utils import resample
 import io
-from .models import OLSWrapper # Import OLSWrapper for type checking
+from .models import OLSWrapper # Import OLSWrapper for type 
+from .helpers import _add_polynomial_terms
 
 def calculate_vif(model_wrapper, dataframe=None, independent_vars=None):
     """
