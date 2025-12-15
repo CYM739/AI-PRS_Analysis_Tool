@@ -13,9 +13,9 @@ def validate_synergy_data(df, drug1_col, drug2_col):
     drug1_doses = df[drug1_col].unique()
     drug2_doses = df[drug2_col].unique()
     
-    # Check if a '0' dose exists for both drugs
-    has_drug1_control = 0 in drug1_doses
-    has_drug2_control = 0 in drug2_doses
+    # Check if a '0' dose exists for both drugs (handles float/int 0)
+    has_drug1_control = any(d == 0 for d in drug1_doses)
+    has_drug2_control = any(d == 0 for d in drug2_doses)
     
     if not has_drug1_control or not has_drug2_control:
         missing = []
@@ -38,9 +38,8 @@ def render():
         return
         
     st.info("""
-    This tool calculates synergy based on established pharmacological models.
-    - **Synergy (Red areas):** The combination is more effective than expected.
-    - **Antagonism (Blue areas):** The combination is less effective than expected.
+    This tool calculates synergy based on validated pharmacological models (Nature Communications 2025).
+    Select the model below to see interpretation guidelines.
     """)
     
     with st.container(border=True):
@@ -63,14 +62,32 @@ def render():
         if transform_data:
             st.markdown(f"The analysis will use `1 - {effect}` as the measure of inhibition.")
         else:
-             st.markdown(f"The analysis will use the raw '{effect}' values. Ensure higher values represent greater drug effect.")
+             st.markdown(f"The analysis will use the raw '{effect}' values. Ensure higher values represent greater drug effect (Inhibition).")
 
+        # Refined Model Selection
         synergy_model_display = st.selectbox(
             "Select Synergy Model",
-            ["Gamma (via Excess HSA)", "HSA (Highest Single Agent)", "Loewe Additivity (placeholder)"],
+            ["Gamma (Recommended)", "HSA (Excess Highest Single Agent)"],
             on_change=clear_synergy_results
         )
         synergy_model_key = synergy_model_display.split(" ")[0].lower()
+
+        # Dynamic Explanation
+        if synergy_model_key == 'gamma':
+            st.success("""
+            **Gamma Score Interpretation (Ratio):**
+            * **< 0.95:** Synergistic (Observed survival is significantly lower than expected).
+            * **~ 1.0:** Additive.
+            * **> 1.0:** Antagonistic.
+            *(Calculated as Observed Viability / Expected HSA Viability)*
+            """)
+        elif synergy_model_key == 'hsa':
+            st.success("""
+            **Excess HSA Interpretation (Difference):**
+            * **> 0:** Synergistic (Observed inhibition is higher than the best single drug).
+            * **< 0:** Antagonistic.
+            *(Calculated as Observed Inhibition - Max Single Agent Inhibition)*
+            """)
 
         # Perform data validation before showing the button
         validate_synergy_data(st.session_state.exp_df, drug1, drug2)
@@ -79,7 +96,13 @@ def render():
         with st.spinner("Calculating synergy scores..."):
             try:
                 df_synergy = st.session_state.exp_df.copy()
+                
+                # Standardize to Inhibition for the function call
+                # (The function handles conversion back to viability for Gamma if needed)
                 if transform_data:
+                    # Check if data is percentage (0-100) or fraction (0-1)
+                    if df_synergy[effect].max() > 1.0:
+                         st.warning("Data appears to be in percentage (0-100). Treating as 0-1 fraction for calculation may yield incorrect Gamma scores.")
                     df_synergy[effect] = 1 - df_synergy[effect]
 
                 synergy_matrix = calculate_synergy(
@@ -96,7 +119,7 @@ def render():
 
             except Exception as e:
                 st.error(f"An error occurred during calculation: {e}")
-                st.error("Please ensure your data is formatted correctly for a synergy matrix.")
+                st.error("Please ensure your data is formatted correctly (e.g., includes single agent controls).")
                 clear_synergy_results()
     
     if st.session_state.get('synergy_matrix') is not None and not st.session_state.synergy_matrix.empty:
@@ -110,5 +133,8 @@ def render():
         drug1_desc = descriptions.get(drug1, drug1)
         drug2_desc = descriptions.get(drug2, drug2)
 
+        # Note: plot_synergy_heatmap logic should handle the color scale.
+        # For Gamma: Blue (Low) is Synergy. For HSA: Red (High) is Synergy.
+        # You may need to adjust plotting_view.py separately if the colors are hardcoded.
         fig = plot_synergy_heatmap(synergy_matrix, drug1_desc, drug2_desc, model_name)
         st.plotly_chart(fig, use_container_width=True)
