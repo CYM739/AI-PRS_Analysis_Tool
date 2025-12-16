@@ -237,8 +237,10 @@ def render():
             )
             st.plotly_chart(fig_qq, use_container_width=True, config=download_config)
 
-            # Histogram
-            fig_hist = px.histogram(x=residuals, nbins=30, title="Residual Histogram", color_discrete_sequence=['grey'])
+            # Histogram - ADDED OUTLINES HERE
+            fig_hist = px.histogram(x=residuals, nbins=30, title="Residual Histogram", color_discrete_sequence=['lightgrey'])
+            fig_hist.update_traces(marker_line_color='black', marker_line_width=1.5, opacity=0.8) # <--- THIS FIXES THE GREY BLOB
+            
             fig_hist = apply_custom_layout(
                 fig_hist, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
                 show_grid, journal_style, legend_font_size, "Residual Histogram", "Residuals", "Count"
