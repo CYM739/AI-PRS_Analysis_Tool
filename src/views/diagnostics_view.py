@@ -18,18 +18,54 @@ from logic.diagnostics import (
 )
 from logic.models import OLSWrapper
 
-def apply_custom_layout(fig, height, width, title_size, axis_size, tick_size, title_text=None, x_text=None, y_text=None):
-    """Helper to apply consistent styling and custom text to plots."""
+def apply_custom_layout(fig, height, width, title_size, axis_size, tick_size, 
+                        show_grid=False, journal_style=False, legend_size=14,
+                        title_text=None, x_text=None, y_text=None):
+    """
+    Applies consistent styling, including the specific 'Journal Style' requirements:
+    - White background
+    - Black frame (mirror axes)
+    - Outward ticks
+    """
+    # 1. Base Layout
     update_dict = {
         'height': height,
         'width': width,
         'title': dict(font=dict(size=title_size)),
-        'xaxis': dict(title_font=dict(size=axis_size), tickfont=dict(size=tick_size)),
-        'yaxis': dict(title_font=dict(size=axis_size), tickfont=dict(size=tick_size)),
-        'margin': dict(l=80, r=40, t=80, b=80) # Add margin for larger fonts
+        'xaxis': dict(
+            title_font=dict(size=axis_size), 
+            tickfont=dict(size=tick_size)
+        ),
+        'yaxis': dict(
+            title_font=dict(size=axis_size), 
+            tickfont=dict(size=tick_size)
+        ),
+        'legend': dict(font=dict(size=legend_size)),
+        'margin': dict(l=80, r=40, t=80, b=80),
+        'plot_bgcolor': 'white' # Default to white for scientific plots
     }
     
-    # Only update text if provided (not None)
+    # 2. Journal Style Overrides (The "Box" look)
+    if journal_style:
+        axis_style = dict(
+            showline=True,      # Draw the solid black line
+            linewidth=2,        # Make it thick enough to see
+            linecolor='black',  # Solid black
+            mirror=True,        # Draw it on top/right too (closes the box)
+            ticks='outside',    # Ticks point OUT towards labels
+            tickwidth=2,
+            tickcolor='black',
+            ticklen=6,
+            showgrid=show_grid  # Usually False for journals
+        )
+        update_dict['xaxis'].update(axis_style)
+        update_dict['yaxis'].update(axis_style)
+    else:
+        # Standard Web Style
+        update_dict['xaxis']['showgrid'] = show_grid
+        update_dict['yaxis']['showgrid'] = show_grid
+    
+    # 3. Apply Custom Text Labels (if provided)
     if title_text:
         update_dict['title']['text'] = title_text
     if x_text:
@@ -49,25 +85,32 @@ def render():
         return
 
     # --- 1. GLOBAL STYLING & EXPORT SETTINGS ---
-    with st.expander("🎨 Graph Appearance & High-Res Export Settings", expanded=False):
+    with st.expander("🎨 Graph Appearance & Publication Settings", expanded=False):
+        st.markdown("##### 📏 Dimensions & Quality")
         c1, c2, c3 = st.columns(3)
-        plot_height = c1.number_input("Plot Height (px)", 400, 2000, 600, step=50)
-        plot_width = c2.number_input("Plot Width (px)", 400, 3000, 1000, step=50, help="Base width. For High-Res export, increase 'Export Scale'.")
-        export_scale = c3.selectbox("Export Scale (DPI)", [1, 2, 3, 4], index=1, help="Multiplies resolution. 1=Screen, 3=Print Quality (300 DPI).")
+        plot_height = c1.number_input("Height (px)", 400, 2000, 600, step=50)
+        plot_width = c2.number_input("Width (px)", 400, 3000, 600, step=50, help="Set Height = Width for a square plot.")
+        export_scale = c3.selectbox("Export Scale (DPI)", [1, 2, 3, 4], index=2, help="3x = 300 DPI (Print Quality)")
 
+        st.markdown("##### ✒️ Fonts & Style")
         c4, c5, c6 = st.columns(3)
-        title_font_size = c4.number_input("Title Font Size", 10, 50, 20)
+        title_font_size = c4.number_input("Title Size", 10, 50, 20)
         axis_font_size = c5.number_input("Axis Label Size", 8, 40, 16)
-        tick_font_size = c6.number_input("Tick Label Size", 8, 30, 12)
+        tick_font_size = c6.number_input("Tick Label Size", 8, 30, 14)
+        
+        c7, c8, c9 = st.columns(3)
+        legend_font_size = c7.number_input("Legend Text Size", 8, 30, 14)
+        journal_style = c8.checkbox("Journal Style (Boxed)", value=True, help="Adds a solid black frame, removes grey grid, and points ticks outward.")
+        show_grid = c9.checkbox("Show Gridlines", value=False, help="Uncheck for clean white background.")
 
-        # Config for Plotly Download Button (The Camera Icon)
+        # Config for Plotly Download Button
         download_config = {
             'toImageButtonOptions': {
-                'format': 'png', # or 'svg'
+                'format': 'png',
                 'filename': 'high_res_plot',
                 'height': plot_height,
                 'width': plot_width,
-                'scale': export_scale # This creates the High Res image
+                'scale': export_scale
             }
         }
 
@@ -75,12 +118,12 @@ def render():
     wrapped_models = st.session_state.get('wrapped_models', {})
     ols_models = {k: v for k, v in wrapped_models.items() if isinstance(v, OLSWrapper)}
     
-    # Retrieve 'exp_df' (Correct Source of Truth)
+    # Retrieve 'exp_df'
     data_df = st.session_state.get('exp_df', None) 
     independent_vars = st.session_state.get('independent_vars', [])
     
     if not ols_models:
-        st.warning("⚠️ No OLS (Polynomial Regression) models found.")
+        st.warning("⚠️ No OLS models found.")
         return
 
     st.divider()
@@ -175,18 +218,24 @@ def render():
 
             (osm, osr), (slope, intercept, r) = stats.probplot(residuals, dist="norm", plot=None)
             fig_qq = go.Figure()
-            fig_qq.add_trace(go.Scatter(x=osm, y=osr, mode='markers', name='Residuals', marker=dict(color='blue', opacity=0.6)))
+            fig_qq.add_trace(go.Scatter(x=osm, y=osr, mode='markers', name='Residuals', marker=dict(color='black', symbol='circle-open', opacity=0.7, size=8)))
             x_line = np.array([np.min(osm), np.max(osm)])
             y_line = slope * x_line + intercept
             fig_qq.add_trace(go.Scatter(x=x_line, y=y_line, mode='lines', name='Normal Line', line=dict(color='red', width=2)))
             
             # Apply Custom Layout
-            fig_qq = apply_custom_layout(fig_qq, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, qq_title, qq_x, qq_y)
+            fig_qq = apply_custom_layout(
+                fig_qq, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
+                show_grid, journal_style, legend_font_size, qq_title, qq_x, qq_y
+            )
             st.plotly_chart(fig_qq, use_container_width=True, config=download_config)
 
-            # Histogram (Simplified, no custom text inputs to save space, but uses global styles)
-            fig_hist = px.histogram(x=residuals, nbins=30, title="Residual Histogram")
-            fig_hist = apply_custom_layout(fig_hist, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, "Residual Histogram", "Residuals", "Count")
+            # Histogram
+            fig_hist = px.histogram(x=residuals, nbins=30, title="Residual Histogram", color_discrete_sequence=['grey'])
+            fig_hist = apply_custom_layout(
+                fig_hist, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
+                show_grid, journal_style, legend_font_size, "Residual Histogram", "Residuals", "Count"
+            )
             st.plotly_chart(fig_hist, use_container_width=True, config=download_config)
 
     # --- 3. Homoscedasticity ---
@@ -211,9 +260,12 @@ def render():
             df_plot = pd.DataFrame({'Fitted': fitted_values, 'Residuals': residuals})
             fig_rvf = px.scatter(df_plot, x='Fitted', y='Residuals', opacity=0.7)
             fig_rvf.add_hline(y=0, line_dash="dash", line_color="red")
-            fig_rvf.update_traces(marker=dict(size=8, color='#636EFA'))
+            fig_rvf.update_traces(marker=dict(size=8, color='black', symbol='circle-open')) # Journal style markers
             
-            fig_rvf = apply_custom_layout(fig_rvf, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, rvf_title, rvf_x, rvf_y)
+            fig_rvf = apply_custom_layout(
+                fig_rvf, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
+                show_grid, journal_style, legend_font_size, rvf_title, rvf_x, rvf_y
+            )
             st.plotly_chart(fig_rvf, use_container_width=True, config=download_config)
 
     # --- 4. Independence ---
@@ -229,9 +281,12 @@ def render():
 
         fig_order = px.scatter(y=residuals)
         fig_order.add_hline(y=0, line_dash="dash", line_color="red")
-        fig_order.update_traces(mode='lines+markers') 
+        fig_order.update_traces(mode='lines+markers', marker=dict(color='black', size=6), line=dict(color='grey', width=1)) 
         
-        fig_order = apply_custom_layout(fig_order, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, ind_title, ind_x, ind_y)
+        fig_order = apply_custom_layout(
+            fig_order, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
+            show_grid, journal_style, legend_font_size, ind_title, ind_x, ind_y
+        )
         st.plotly_chart(fig_order, use_container_width=True, config=download_config)
 
         if 1.5 < dw_stat < 2.5:
@@ -257,14 +312,17 @@ def render():
             fig_pred = go.Figure()
             fig_pred.add_trace(go.Scatter(
                 x=y_actual, y=fitted_values, mode='markers', 
-                name='Data', marker=dict(color='blue', opacity=0.6, size=8)
+                name='Data', marker=dict(color='black', opacity=0.6, size=8, symbol='circle-open') # Journal style
             ))
             fig_pred.add_trace(go.Scatter(
                 x=[min_val, max_val], y=[min_val, max_val], 
                 mode='lines', name='Perfect Fit', line=dict(color='red', dash='dash')
             ))
             
-            fig_pred = apply_custom_layout(fig_pred, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, pred_title, pred_x, pred_y)
+            fig_pred = apply_custom_layout(
+                fig_pred, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
+                show_grid, journal_style, legend_font_size, pred_title, pred_x, pred_y
+            )
             st.plotly_chart(fig_pred, use_container_width=True, config=download_config)
 
         st.divider()
