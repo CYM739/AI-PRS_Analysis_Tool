@@ -30,7 +30,7 @@ def render():
     wrapped_models = st.session_state.get('wrapped_models', {})
     ols_models = {k: v for k, v in wrapped_models.items() if isinstance(v, OLSWrapper)}
     
-    # Retrieve 'exp_df' correctly
+    # Retrieve 'exp_df' (Correct Source of Truth)
     data_df = st.session_state.get('exp_df', None) 
     independent_vars = st.session_state.get('independent_vars', [])
     
@@ -43,7 +43,12 @@ def render():
     with col_dl_all:
         if st.button("📥 Download Diagnostics for ALL Models"):
             with st.spinner("Generating combined report for all OLS models..."):
-                full_project_report = generate_full_project_report(wrapped_models)
+                # FIX: Pass data_df and independent_vars to enable VIF Centering in the download
+                full_project_report = generate_full_project_report(
+                    wrapped_models, 
+                    dataframe=data_df, 
+                    independent_vars=independent_vars
+                )
                 st.download_button(
                     label="📄 Save Full Project Report",
                     data=full_project_report,
@@ -65,7 +70,13 @@ def render():
         st.write("") 
         if st.button("📄 Report (This Model)"):
              with st.spinner("Generating diagnostic report..."):
-                report_text = generate_diagnostics_report(model_wrapper, model_name=selected_model_name)
+                # FIX: Pass data_df and independent_vars here too
+                report_text = generate_diagnostics_report(
+                    model_wrapper, 
+                    model_name=selected_model_name,
+                    dataframe=data_df,
+                    independent_vars=independent_vars
+                )
                 st.download_button(
                     label="Download",
                     data=report_text,
@@ -77,8 +88,6 @@ def render():
     results = model_wrapper.model 
     residuals = results.resid
     fitted_values = results.fittedvalues
-    # Get actual values for plotting
-    y_actual = results.model.endog
     
     # --- Tabbed Interface for Diagnostics ---
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
@@ -104,37 +113,49 @@ def render():
             # Prepare variable list
             effective_vars = independent_vars if independent_vars else model_wrapper.independent_vars
 
+            # LOGIC SPLIT: Explicitly handle missing data case
             if use_centered:
                 if data_df is not None:
-                    # Centering Logic & Debug Preview
+                    # ---------------------------------------------------------
+                    # SHOW PREVIEW (Only if data exists)
+                    # ---------------------------------------------------------
                     df_display = data_df.copy()
                     means_dict = {}
                     
+                    # Perform centering for display
                     for var in effective_vars:
                         if var in df_display.columns and pd.api.types.is_numeric_dtype(df_display[var]):
                             mean_val = df_display[var].mean()
                             means_dict[var] = mean_val
                             df_display[var] = df_display[var] - mean_val
 
-                    with st.expander("🔎 Inspect Centered Data (Debugging)", expanded=False):
+                    # Force expanded=True so you definitely see it
+                    with st.expander("🔎 Inspect Centered Data (Debugging)", expanded=True):
                         st.caption("These are the values being used for VIF calculation. They should be centered around 0.")
                         st.write("**Means subtracted:**", means_dict)
+                        # Show only relevant columns to avoid clutter
                         cols_to_show = [c for c in effective_vars if c in df_display.columns]
                         st.dataframe(df_display[cols_to_show].head(), use_container_width=True)
 
+                    # Calculate Centered VIF
                     vif_df = calculate_vif(
                         model_wrapper, 
                         dataframe=data_df, 
                         independent_vars=effective_vars
                     )
                     st.success("✅ **Centered VIFs Active**")
+                    
                 else:
-                    st.warning("⚠️ **Cannot Apply Centering**: `exp_df` is missing. Showing Raw VIFs.")
+                    # Data is missing, but user asked for centering
+                    st.warning("⚠️ **Cannot Apply Centering**: The original dataset (`exp_df`) is missing from the session state. Showing Raw VIFs instead.")
                     vif_df = calculate_vif(model_wrapper)
+
             else:
+                # User unchecked the box
                 st.info("ℹ️ **Raw VIFs Active**: High values are expected for polynomial terms.")
                 vif_df = calculate_vif(model_wrapper)
 
+            # Display VIF Table
             def highlight_vif(val):
                 color = 'red' if val > 10 else ('orange' if val > 5 else 'green')
                 return f'color: {color}; font-weight: bold'
@@ -205,42 +226,24 @@ def render():
         st.markdown("#### Independence of Errors")
         st.caption("Checks if errors are correlated with each other (Target ~2.0).")
         
-        col1, col2 = st.columns([1, 2])
+        dw_stat = perform_autocorrelation_test(residuals)
+        st.metric("Durbin-Watson Statistic", f"{dw_stat:.4f}")
         
-        with col1:
-            dw_stat = perform_autocorrelation_test(residuals)
-            st.metric("Durbin-Watson Statistic", f"{dw_stat:.4f}")
-            
-            if 1.5 < dw_stat < 2.5:
-                 st.success("✅ **No Autocorrelation**: Value is close to 2.0.")
-            else:
-                 st.warning("⚠️ **Possible Autocorrelation**: Value is far from 2.0 (Range: 0-4).")
-                 
-            st.info("Note: This test is most relevant for time-series data or sequentially run experiments.")
-
-        with col2:
-            # --- NEW PLOT: Residuals vs Order ---
-            fig_order = px.scatter(
-                x=list(range(len(residuals))), 
-                y=residuals, 
-                title="Residuals vs. Experiment Order",
-                labels={'x': 'Order (Index)', 'y': 'Residuals'}
-            )
-            fig_order.add_hline(y=0, line_dash="dash", line_color="red")
-            fig_order.update_traces(mode='lines+markers', marker=dict(color='purple'))
-            fig_order.update_layout(height=350)
-            st.plotly_chart(fig_order, use_container_width=True)
+        if 1.5 < dw_stat < 2.5:
+             st.success("✅ **No Autocorrelation**: Value is close to 2.0.")
+        else:
+             st.warning("⚠️ **Possible Autocorrelation**: Value is far from 2.0 (Range: 0-4).")
+             
+        st.info("Note: This test is most relevant for time-series data.")
 
     # --- 5. Predictive Uncertainty ---
     with tab5:
         st.markdown("### Quantifying Uncertainty")
-        
         col_cv, col_boot = st.columns(2)
         
-        # --- K-Fold CV Section ---
         with col_cv:
             with st.container(border=True):
-                st.markdown("#### 🔄 Cross-Validation")
+                st.markdown("#### 🔄 Cross-Validation (K-Fold)")
                 k_folds = st.number_input("Number of Folds (K)", min_value=2, max_value=20, value=5)
                 
                 if st.button("Run K-Fold CV"):
@@ -253,32 +256,6 @@ def render():
                         except Exception as e:
                             st.error(f"CV Failed: {e}")
 
-            # --- NEW PLOT: Pred vs Actual (Mini Version) ---
-            st.write("")
-            st.markdown("#### Model Fit Check")
-            fig_pred = go.Figure()
-            # Scatter of data
-            fig_pred.add_trace(go.Scatter(
-                x=y_actual, y=fitted_values, 
-                mode='markers', name='Data',
-                marker=dict(color='blue', opacity=0.6)
-            ))
-            # 45-degree line
-            min_val = min(np.min(y_actual), np.min(fitted_values))
-            max_val = max(np.max(y_actual), np.max(fitted_values))
-            fig_pred.add_trace(go.Scatter(
-                x=[min_val, max_val], y=[min_val, max_val],
-                mode='lines', name='Perfect Fit',
-                line=dict(color='red', dash='dash')
-            ))
-            fig_pred.update_layout(
-                title="Predicted vs. Actual",
-                xaxis_title="Actual", yaxis_title="Predicted",
-                height=350, showlegend=True
-            )
-            st.plotly_chart(fig_pred, use_container_width=True)
-
-        # --- Bootstrap Section ---
         with col_boot:
             with st.container(border=True):
                 st.markdown("#### 🎲 Bootstrap Analysis")
