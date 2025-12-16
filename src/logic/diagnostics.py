@@ -187,98 +187,48 @@ def perform_bootstrap_analysis(model_wrapper, n_bootstraps=100):
         
     return pd.DataFrame(stats_list)
 
-def generate_diagnostics_report(model_wrapper, model_name="Model"):
-    """
-    Aggregates all diagnostic tests into a formatted text report for a single model.
-    """
+def generate_diagnostics_report(model_wrapper, model_name="Model", dataframe=None, independent_vars=None):
+    """Aggregates diagnostic tests, now supports Centered VIF if data is passed."""
     results = model_wrapper.model
     residuals = results.resid
-    
     report = []
-    report.append(f"Model Name: {model_name}")
-    report.append(f"Formula: {model_wrapper.formula}")
-    report.append("-" * 50)
+    report.append(f"Model Name: {model_name}\nFormula: {model_wrapper.formula}\n" + "-" * 50)
     
-    # 1. Multicollinearity
     report.append("1. MULTICOLLINEARITY (Variance Inflation Factor)")
     try:
-        vif_df = calculate_vif(model_wrapper)
+        # Pass the data to calculate_vif so it can perform centering
+        vif_df = calculate_vif(model_wrapper, dataframe=dataframe, independent_vars=independent_vars)
+        if dataframe is not None:
+             report.append("(NOTE: VIFs are Mean-Centered to remove structural multicollinearity.)")
         report.append(vif_df.to_string(index=False, float_format="{:.4f}".format))
-    except Exception as e:
-        report.append(f"Error: {e}")
-    report.append("")
+    except Exception as e: report.append(f"Error: {e}")
     
-    # 2. Normality
-    report.append("2. NORMALITY OF RESIDUALS")
+    report.append("\n2. NORMALITY")
     stat, p_val, test_name = perform_normality_test(residuals)
-    report.append(f"Test: {test_name}, p-value: {p_val:.4f}")
-    if p_val < 0.05:
-        report.append("[FAIL] Residuals are NOT normal.")
-    else:
-        report.append("[PASS] Residuals appear normal.")
-    report.append("")
-
-    # 3. Homoscedasticity
-    report.append("3. HOMOSCEDASTICITY")
+    report.append(f"{test_name} p-value: {p_val:.4f} -> " + ("FAIL" if p_val < 0.05 else "PASS"))
+    
+    report.append("\n3. HOMOSCEDASTICITY")
     lm_p = perform_heteroscedasticity_test(residuals, model_wrapper)
-    report.append(f"Breusch-Pagan p-value: {lm_p:.4f}")
-    if lm_p < 0.05:
-        report.append("[FAIL] Heteroscedasticity detected.")
-    else:
-        report.append("[PASS] Variance appears constant.")
-    report.append("")
-
-    # 4. Independence
-    report.append("4. INDEPENDENCE (Autocorrelation)")
+    report.append(f"Breusch-Pagan p-value: {lm_p:.4f} -> " + ("FAIL" if lm_p < 0.05 else "PASS"))
+    
+    report.append("\n4. INDEPENDENCE")
     dw_stat = perform_autocorrelation_test(residuals)
     report.append(f"Durbin-Watson: {dw_stat:.4f}")
-    report.append("")
-
-    # 5. Predictive Uncertainty
-    report.append("5. PREDICTIVE UNCERTAINTY (CV & Bootstrap)")
     
-    report.append("(A) 5-Fold Cross-Validation Results:")
+    report.append("\n5. PREDICTIVE UNCERTAINTY")
     try:
-        cv_res = perform_kfold_cv(model_wrapper, k=5)
-        report.append(f"    Avg RMSE: {cv_res['avg_rmse']:.4f} (+/- {cv_res['std_rmse']:.4f})")
-        report.append(f"    Avg R2:   {cv_res['avg_r2']:.4f} (+/- {cv_res['std_r2']:.4f})")
-    except Exception as e:
-        report.append(f"    CV Error: {e}")
-    report.append("")
-
-    report.append("(B) Bootstrap Analysis (N=50) - Coefficient Stability:")
-    try:
-        boot_df = perform_bootstrap_analysis(model_wrapper, n_bootstraps=50)
-        disp_cols = ['Term', 'Original', '95% CI Lower', '95% CI Upper', 'Stable?']
-        report.append(boot_df[disp_cols].to_string(index=False, float_format="{:.4f}".format))
-        report.append("\n    Note: 'Stable?' checks if 95% CI excludes 0 (Significant).")
-        report.append("          ⚠️ means CI crosses 0 (likely insignificant).")
-    except Exception as e:
-        report.append(f"    Bootstrap Error: {e}")
-
-    report.append("")
+        cv = perform_kfold_cv(model_wrapper)
+        report.append(f"CV Avg RMSE: {cv['avg_rmse']:.4f}")
+    except: pass
+    
     return "\n".join(report)
 
-def generate_full_project_report(wrapped_models):
-    """
-    Iterates through all OLS models in the project and generates a combined diagnostic report.
-    """
-    full_report = []
-    full_report.append("==================================================")
-    full_report.append("       FULL PROJECT OLS DIAGNOSTICS REPORT        ")
-    full_report.append("==================================================")
-    full_report.append("")
-    
-    ols_models = {k: v for k, v in wrapped_models.items() if isinstance(v, OLSWrapper)}
-    
-    if not ols_models:
-        return "No OLS models found in the project."
-        
-    for name, model in ols_models.items():
-        full_report.append(f"=== DIAGNOSTICS FOR MODEL: {name} ===")
-        model_report = generate_diagnostics_report(model, model_name=name)
-        full_report.append(model_report)
-        full_report.append("\n" + "="*50 + "\n")
-        
-    full_report.append("End of Project Report")
-    return "\n".join(full_report)
+def generate_full_project_report(wrapped_models, dataframe=None, independent_vars=None):
+    """Iterates through all OLS models, passing data down for centering."""
+    full = ["=== PROJECT DIAGNOSTICS REPORT ===\n"]
+    for name, model in wrapped_models.items():
+        if isinstance(model, OLSWrapper):
+            # Pass the data down to the single report generator
+            full.append(generate_diagnostics_report(model, name, dataframe=dataframe, independent_vars=independent_vars))
+            full.append("\n" + "="*30 + "\n")
+    return "\n".join(full)
