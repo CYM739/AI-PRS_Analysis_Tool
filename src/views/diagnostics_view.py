@@ -22,63 +22,58 @@ def apply_custom_layout(fig, height, width, title_size, axis_size, tick_size,
                         show_grid=False, journal_style=False, legend_size=14,
                         title_text=None, x_text=None, y_text=None):
     """
-    Applies consistent styling, including the specific 'Journal Style' requirements:
-    - White background
-    - Black frame (mirror axes)
-    - Outward ticks
-    - Centered Title
+    Applies consistent styling with High-Contrast BLACK text.
     """
-    # 1. Base Layout
+    # 1. Base Layout (Force Black Fonts everywhere)
     update_dict = {
         'height': height,
         'width': width,
         'title': dict(
-            font=dict(size=title_size),
-            x=0.5,              # Center the title horizontally
-            xanchor='center',   # Anchor the center of the title to x=0.5
-            yanchor='top'       # Anchor to the top
+            font=dict(size=title_size, color='black'), # Force Black
+            x=0.5,              
+            xanchor='center',   
+            yanchor='top'       
         ),
         'xaxis': dict(
-            title_font=dict(size=axis_size), 
-            tickfont=dict(size=tick_size)
+            title_font=dict(size=axis_size, color='black'), # Force Black
+            tickfont=dict(size=tick_size, color='black')    # Force Black
         ),
         'yaxis': dict(
-            title_font=dict(size=axis_size), 
-            tickfont=dict(size=tick_size)
+            title_font=dict(size=axis_size, color='black'), # Force Black
+            tickfont=dict(size=tick_size, color='black')    # Force Black
         ),
-        'legend': dict(font=dict(size=legend_size)),
+        'legend': dict(font=dict(size=legend_size, color='black')), # Force Black
         'margin': dict(l=80, r=40, t=80, b=80),
-        'plot_bgcolor': 'white' # Default to white for scientific plots
+        'plot_bgcolor': 'white'
     }
     
-    # 2. Journal Style Overrides (The "Box" look)
+    # 2. Journal Style Overrides
     if journal_style:
         axis_style = dict(
-            showline=True,      # Draw the solid black line
-            linewidth=2,        # Make it thick enough to see
-            linecolor='black',  # Solid black
-            mirror=True,        # Draw it on top/right too (closes the box)
-            ticks='outside',    # Ticks point OUT towards labels
+            showline=True,      
+            linewidth=2,        
+            linecolor='black',  
+            mirror=True,        
+            ticks='outside',    
             tickwidth=2,
             tickcolor='black',
             ticklen=6,
-            showgrid=show_grid  # Usually False for journals
+            showgrid=show_grid  
         )
         update_dict['xaxis'].update(axis_style)
         update_dict['yaxis'].update(axis_style)
     else:
-        # Standard Web Style
+        # Even in non-journal mode, keep text black but use default grid logic
         update_dict['xaxis']['showgrid'] = show_grid
         update_dict['yaxis']['showgrid'] = show_grid
     
-    # 3. Apply Custom Text Labels (if provided)
-    # We check 'is not None' so that empty strings "" (cleared inputs) actually clear the title.
+    # 3. Apply Custom Text Labels
     if title_text is not None:
         update_dict['title']['text'] = title_text
     if x_text is not None:
-        update_dict['xaxis']['title'] = dict(text=x_text, font=dict(size=axis_size))
+        update_dict['xaxis']['title'] = dict(text=x_text, font=dict(size=axis_size, color='black'))
     if y_text is not None:
-        update_dict['yaxis']['title'] = dict(text=y_text, font=dict(size=axis_size))
+        update_dict['yaxis']['title'] = dict(text=y_text, font=dict(size=axis_size, color='black'))
         
     fig.update_layout(**update_dict)
     return fig
@@ -95,22 +90,24 @@ def render():
     with st.expander("🎨 Graph Appearance & Publication Settings", expanded=False):
         st.markdown("##### 📏 Dimensions & Quality")
         c1, c2, c3 = st.columns(3)
+        # UPDATED DEFAULTS: Height 600, Width 800
         plot_height = c1.number_input("Height (px)", 400, 2000, 600, step=50)
-        plot_width = c2.number_input("Width (px)", 400, 3000, 600, step=50, help="Set Height = Width for a square plot.")
+        plot_width = c2.number_input("Width (px)", 400, 3000, 800, step=50, help="Set Height = Width for a square plot.")
         export_scale = c3.selectbox("Export Scale (DPI)", [1, 2, 3, 4], index=2, help="3x = 300 DPI (Print Quality)")
 
         st.markdown("##### ✒️ Fonts & Style")
         c4, c5, c6 = st.columns(3)
-        title_font_size = c4.number_input("Title Size", 10, 50, 20)
-        axis_font_size = c5.number_input("Axis Label Size", 8, 40, 16)
-        tick_font_size = c6.number_input("Tick Label Size", 8, 30, 14)
+        # UPDATED DEFAULTS: All 25
+        title_font_size = c4.number_input("Title Size", 10, 50, 25)
+        axis_font_size = c5.number_input("Axis Label Size", 8, 40, 25)
+        tick_font_size = c6.number_input("Tick Label Size", 8, 30, 25)
         
         c7, c8, c9 = st.columns(3)
-        legend_font_size = c7.number_input("Legend Text Size", 8, 30, 14)
+        # UPDATED DEFAULT: 25
+        legend_font_size = c7.number_input("Legend Text Size", 8, 30, 25)
         journal_style = c8.checkbox("Journal Style (Boxed)", value=True, help="Adds a solid black frame, removes grey grid, and points ticks outward.")
         show_grid = c9.checkbox("Show Gridlines", value=False, help="Uncheck for clean white background.")
 
-        # Config for Plotly Download Button
         download_config = {
             'toImageButtonOptions': {
                 'format': 'png',
@@ -217,7 +214,6 @@ def render():
                 st.success("✅ **Fail to Reject H0**: Residuals look normal.")
 
         with col2:
-            # CUSTOMIZATION FOR Q-Q PLOT
             with st.expander("✏️ Customize Q-Q Plot Labels"):
                 qq_title = st.text_input("Title", "Q-Q Plot", key="qq_title")
                 qq_x = st.text_input("X Label", "Theoretical Quantiles", key="qq_x")
@@ -230,16 +226,14 @@ def render():
             y_line = slope * x_line + intercept
             fig_qq.add_trace(go.Scatter(x=x_line, y=y_line, mode='lines', name='Normal Line', line=dict(color='red', width=2)))
             
-            # Apply Custom Layout
             fig_qq = apply_custom_layout(
                 fig_qq, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
                 show_grid, journal_style, legend_font_size, qq_title, qq_x, qq_y
             )
             st.plotly_chart(fig_qq, use_container_width=True, config=download_config)
 
-            # Histogram - ADDED OUTLINES HERE
             fig_hist = px.histogram(x=residuals, nbins=30, title="Residual Histogram", color_discrete_sequence=['lightgrey'])
-            fig_hist.update_traces(marker_line_color='black', marker_line_width=1.5, opacity=0.8) # <--- THIS FIXES THE GREY BLOB
+            fig_hist.update_traces(marker_line_color='black', marker_line_width=1.5, opacity=0.8)
             
             fig_hist = apply_custom_layout(
                 fig_hist, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
@@ -269,7 +263,7 @@ def render():
             df_plot = pd.DataFrame({'Fitted': fitted_values, 'Residuals': residuals})
             fig_rvf = px.scatter(df_plot, x='Fitted', y='Residuals', opacity=0.7)
             fig_rvf.add_hline(y=0, line_dash="dash", line_color="red")
-            fig_rvf.update_traces(marker=dict(size=8, color='black', symbol='circle-open')) # Journal style markers
+            fig_rvf.update_traces(marker=dict(size=8, color='black', symbol='circle-open')) 
             
             fig_rvf = apply_custom_layout(
                 fig_rvf, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
@@ -321,7 +315,7 @@ def render():
             fig_pred = go.Figure()
             fig_pred.add_trace(go.Scatter(
                 x=y_actual, y=fitted_values, mode='markers', 
-                name='Data', marker=dict(color='black', opacity=0.6, size=8, symbol='circle-open') # Journal style
+                name='Data', marker=dict(color='black', opacity=0.6, size=8, symbol='circle-open')
             ))
             fig_pred.add_trace(go.Scatter(
                 x=[min_val, max_val], y=[min_val, max_val], 
@@ -336,7 +330,6 @@ def render():
 
         st.divider()
 
-        # CV and Bootstrap Section (Unchanged)
         col_cv, col_boot = st.columns(2)
         with col_cv:
             with st.container(border=True):
