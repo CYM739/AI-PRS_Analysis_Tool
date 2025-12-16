@@ -26,12 +26,18 @@ def apply_custom_layout(fig, height, width, title_size, axis_size, tick_size,
     - White background
     - Black frame (mirror axes)
     - Outward ticks
+    - Centered Title
     """
     # 1. Base Layout
     update_dict = {
         'height': height,
         'width': width,
-        'title': dict(font=dict(size=title_size)),
+        'title': dict(
+            font=dict(size=title_size),
+            x=0.5,              # Center the title horizontally
+            xanchor='center',   # Anchor the center of the title to x=0.5
+            yanchor='top'       # Anchor to the top
+        ),
         'xaxis': dict(
             title_font=dict(size=axis_size), 
             tickfont=dict(size=tick_size)
@@ -66,11 +72,12 @@ def apply_custom_layout(fig, height, width, title_size, axis_size, tick_size,
         update_dict['yaxis']['showgrid'] = show_grid
     
     # 3. Apply Custom Text Labels (if provided)
-    if title_text:
+    # We check 'is not None' so that empty strings "" (cleared inputs) actually clear the title.
+    if title_text is not None:
         update_dict['title']['text'] = title_text
-    if x_text:
+    if x_text is not None:
         update_dict['xaxis']['title'] = dict(text=x_text, font=dict(size=axis_size))
-    if y_text:
+    if y_text is not None:
         update_dict['yaxis']['title'] = dict(text=y_text, font=dict(size=axis_size))
         
     fig.update_layout(**update_dict)
