@@ -90,20 +90,17 @@ def render():
     with st.expander("🎨 Graph Appearance & Publication Settings", expanded=False):
         st.markdown("##### 📏 Dimensions & Quality")
         c1, c2, c3 = st.columns(3)
-        # UPDATED DEFAULTS: Height 600, Width 800
         plot_height = c1.number_input("Height (px)", 400, 2000, 600, step=50)
         plot_width = c2.number_input("Width (px)", 400, 3000, 800, step=50, help="Set Height = Width for a square plot.")
         export_scale = c3.selectbox("Export Scale (DPI)", [1, 2, 3, 4], index=2, help="3x = 300 DPI (Print Quality)")
 
         st.markdown("##### ✒️ Fonts & Style")
         c4, c5, c6 = st.columns(3)
-        # UPDATED DEFAULTS: All 25
         title_font_size = c4.number_input("Title Size", 10, 50, 25)
         axis_font_size = c5.number_input("Axis Label Size", 8, 40, 25)
         tick_font_size = c6.number_input("Tick Label Size", 8, 30, 25)
         
         c7, c8, c9 = st.columns(3)
-        # UPDATED DEFAULT: 25
         legend_font_size = c7.number_input("Legend Text Size", 8, 30, 25)
         journal_style = c8.checkbox("Journal Style (Boxed)", value=True, help="Adds a solid black frame, removes grey grid, and points ticks outward.")
         show_grid = c9.checkbox("Show Gridlines", value=False, help="Uncheck for clean white background.")
@@ -214,6 +211,7 @@ def render():
                 st.success("✅ **Fail to Reject H0**: Residuals look normal.")
 
         with col2:
+            # CUSTOMIZATION FOR Q-Q PLOT
             with st.expander("✏️ Customize Q-Q Plot Labels"):
                 qq_title = st.text_input("Title", "Q-Q Plot", key="qq_title")
                 qq_x = st.text_input("X Label", "Theoretical Quantiles", key="qq_x")
@@ -232,12 +230,19 @@ def render():
             )
             st.plotly_chart(fig_qq, use_container_width=True, config=download_config)
 
-            fig_hist = px.histogram(x=residuals, nbins=30, title="Residual Histogram", color_discrete_sequence=['lightgrey'])
+            # --- Histogram Customization & Plot ---
+            st.divider() # Visual separation
+            with st.expander("✏️ Customize Histogram Labels"):
+                hist_title = st.text_input("Title", "Residual Histogram", key="hist_title")
+                hist_x = st.text_input("X Label", "Residuals", key="hist_x")
+                hist_y = st.text_input("Y Label", "Count", key="hist_y")
+
+            fig_hist = px.histogram(x=residuals, nbins=30, title=hist_title, color_discrete_sequence=['lightgrey'])
             fig_hist.update_traces(marker_line_color='black', marker_line_width=1.5, opacity=0.8)
             
             fig_hist = apply_custom_layout(
                 fig_hist, plot_height, plot_width, title_font_size, axis_font_size, tick_font_size, 
-                show_grid, journal_style, legend_font_size, "Residual Histogram", "Residuals", "Count"
+                show_grid, journal_style, legend_font_size, hist_title, hist_x, hist_y
             )
             st.plotly_chart(fig_hist, use_container_width=True, config=download_config)
 
