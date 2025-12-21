@@ -1,4 +1,4 @@
-# **🧠 AI-Powered Response Surface (AI-PRS) Analysis Tool**
+# **🧠 Response Surface (AI-PRS) Analysis Tool**
 
 This is a Streamlit web application designed for advanced data analysis, statistical modeling, and optimization using Response Surface Methodology (RSM). The tool allows users to upload experimental data, automatically generate predictive models, and use both traditional and AI-powered optimization algorithms to find the ideal input variables for desired outcomes.
 
