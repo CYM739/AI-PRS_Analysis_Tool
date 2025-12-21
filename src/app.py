@@ -49,7 +49,7 @@ def main():
     Main function to run the Streamlit application UI and logic.
     """
     st.set_page_config(page_title="AI-PRS Analysis Tool", layout="wide")
-    st.title("🧠 AI-Powered Response Surface Analysis Tool")
+    st.title("🧠 Response Surface Analysis Tool")
 
     state_management.initialize_session_state()
     display_sidebar_info()
