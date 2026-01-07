@@ -34,37 +34,69 @@ def run_optimization(fun, bounds, start_points, constraints, algorithm, algo_par
             return basinhopping(func=fun, x0=start_points, niter=algo_params['niter'], minimizer_kwargs=minimizer_kwargs)
         elif algorithm.startswith('SHGO'):
             return shgo(func=fun, bounds=bounds, constraints=constraints, n=algo_params.get('shgo_n', 100), iters=algo_params.get('shgo_iters', 3), args=args_tuple)
-
-def run_multi_objective_penalty_optimization(model_1, model_2, independent_vars, bounds, start_points, r_min, r_max, target_model_goal, algorithm, algo_params, penalty_weight=1000):
+def create_range_constraints(model, independent_vars, r_min, r_max):
     """
-    Multi-objective optimization using a penalty function.
+    Creates a list of inequality constraints for scipy.optimize.
+    Constraint format: fun(x) >= 0.
     """
-    if target_model_goal == 'Maximize':
-        def objective_function_multi(x):
-            outcome_2 = objective_function(x, model_2, independent_vars)
-            outcome_1 = objective_function(x, model_1, independent_vars)
+    return [
+        {'type': 'ineq', 'fun': lambda x: objective_function(x, model, independent_vars) - r_min},
+        {'type': 'ineq', 'fun': lambda x: r_max - objective_function(x, model, independent_vars)}
+    ]
+    
+def run_weighted_tradeoff_optimization(model_1, model_2, independent_vars, bounds, start_points,
+                                       r_min_1, r_max_1, r_min_2, r_max_2,
+                                       weights, algorithm, algo_params):
+    """
+    Stage 3: Finds the best trade-off by Maximizing a weighted score 
+    subject to STRICT constraints on both models.
+    """
+    # 1. Create Strict Constraints for both models
+    constraints = []
+    constraints.extend(create_range_constraints(model_1, independent_vars, r_min_1, r_max_1))
+    constraints.extend(create_range_constraints(model_2, independent_vars, r_min_2, r_max_2))
 
-            penalty = 0
-            if outcome_1 < r_min:
-                penalty = (r_min - outcome_1)**2
-            elif outcome_1 > r_max:
-                penalty = (outcome_1 - r_max)**2
+    # 2. Define Objective (Maximize Weighted Score)
+    # Scipy minimizes, so we return negative weighted score.
+    w1 = weights.get('model_1', 0.5)
+    w2 = weights.get('model_2', 0.5)
 
-            return -outcome_2 + penalty_weight * penalty
-    else:  # 'Minimize'
-        def objective_function_multi(x):
-            outcome_2 = objective_function(x, model_2, independent_vars)
-            outcome_1 = objective_function(x, model_1, independent_vars)
+    def weighted_objective(x):
+        val_1 = objective_function(x, model_1, independent_vars)
+        val_2 = objective_function(x, model_2, independent_vars)
+        # Score = w1*Model1 + w2*Model2
+        score = (val_1 * w1) + (val_2 * w2)
+        return -score
 
-            penalty = 0
-            if outcome_1 < r_min:
-                penalty = (r_min - outcome_1)**2
-            elif outcome_1 > r_max:
-                penalty = (outcome_1 - r_max)**2
+    # 3. Run Optimization
+    result = run_optimization(weighted_objective, bounds, start_points, constraints, algorithm, algo_params)
+    return result
+                                           
+def run_multi_objective_penalty_optimization(model_1, model_2, independent_vars, bounds, start_points, 
+                                             r_min_1, r_max_1, r_min_2, r_max_2, 
+                                             algorithm, algo_params, penalty_weight=1000):
+    """
+    Stage 1: Multi-objective optimization using a penalty function.
+    Finds a feasible starting point where BOTH models are within their specified ranges.
+    """
+    def objective_function_penalty(x):
+        outcome_1 = objective_function(x, model_1, independent_vars)
+        outcome_2 = objective_function(x, model_2, independent_vars)
 
-            return outcome_2 + penalty_weight * penalty
+        penalty = 0
+        
+        # Penalize Model 1 deviations
+        if outcome_1 < r_min_1: penalty += (r_min_1 - outcome_1)**2
+        elif outcome_1 > r_max_1: penalty += (outcome_1 - r_max_1)**2
 
-    result = run_optimization(objective_function_multi, bounds, start_points, [], algorithm, algo_params)
+        # Penalize Model 2 deviations
+        if outcome_2 < r_min_2: penalty += (r_min_2 - outcome_2)**2
+        elif outcome_2 > r_max_2: penalty += (outcome_2 - r_max_2)**2
+
+        # We minimize pure penalty to find a valid entry point into the feasible region
+        return penalty * penalty_weight
+
+    result = run_optimization(objective_function_penalty, bounds, start_points, [], algorithm, algo_params)
     return result
     
 def difference_objective_function(x, model_1, model_2, all_alphabet_vars, target_model_goal='Maximize'):
