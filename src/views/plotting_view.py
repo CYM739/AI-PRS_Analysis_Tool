@@ -210,7 +210,7 @@ def render():
                 
                 with tab1:
                     st.markdown("#### Pareto Frontier")
-                    st.markdown("Click points on the chart to see their exact details in the table below.")
+                    st.markdown("Click points on the chart to **add** them to the table below.")
                     
                     # 1. Generate/Refresh Button
                     if st.button("Generate/Refresh Pareto Plot"):
@@ -218,18 +218,20 @@ def render():
                             # Logic function must return (fig, df)
                             fig, df = plot_pareto_frontier(model_1, model_2, vars_, bounds, num_samples=sample_size)
                             
-                            # Store in Session State to persist across interactions
+                            # Store in Session State
                             st.session_state.pareto_fig = fig
                             st.session_state.pareto_data = df
                             st.session_state.pareto_model_names = (m1_name, m2_name)
+                            # RESET accumulation on new generation
+                            st.session_state.pareto_selected_indices = set()
 
                     # 2. Display Plot (if it exists in state)
                     if 'pareto_fig' in st.session_state:
-                        # Check if models match current selection (to avoid stale plots)
+                        # Check stale state
                         stored_m1, stored_m2 = st.session_state.get('pareto_model_names', (None, None))
                         if stored_m1 == m1_name and stored_m2 == m2_name:
                             
-                            # Apply Custom Appearance Updates (on the fly)
+                            # Apply Custom Appearance Updates
                             current_fig = st.session_state.pareto_fig
                             current_fig.update_layout(
                                 title=custom_pareto_title,
@@ -238,41 +240,61 @@ def render():
                             )
                             current_fig.update_traces(marker=dict(size=pt_size, opacity=pt_opacity))
 
-                            # RENDER WITH SELECTION ENABLED
+                            # RENDER WITH SELECTION
                             selection_event = st.plotly_chart(
                                 current_fig, 
                                 use_container_width=True, 
-                                on_select="rerun",  # Triggers rerun on click
-                                selection_mode="points", # Allows clicking points
+                                on_select="rerun", 
+                                selection_mode="points",
                                 key="pareto_chart_select"
                             )
 
-                            # 3. Handle Selection
-                            if selection_event and selection_event.selection.get("point_indices"):
-                                st.subheader("Selected Solutions")
-                                indices = selection_event.selection["point_indices"]
+                            # 3. Handle Cumulative Selection
+                            # Initialize set if needed
+                            if 'pareto_selected_indices' not in st.session_state:
+                                st.session_state.pareto_selected_indices = set()
+
+                            # If user clicked something new, add it to our set
+                            current_click = selection_event.selection.get("point_indices", [])
+                            if current_click:
+                                for idx in current_click:
+                                    st.session_state.pareto_selected_indices.add(idx)
+
+                            # 4. Display Accumulated Table
+                            if st.session_state.pareto_selected_indices:
+                                st.subheader("Selected Solutions (Accumulated)")
                                 
-                                # Retrieve rows from the stored dataframe
-                                selected_data = st.session_state.pareto_data.iloc[indices]
+                                # Controls for the table
+                                tc1, tc2 = st.columns([1, 4])
+                                if tc1.button("Clear Selection Table"):
+                                    st.session_state.pareto_selected_indices = set()
+                                    st.rerun()
+
+                                # Retrieve rows
+                                idxs = sorted(list(st.session_state.pareto_selected_indices))
+                                # Ensure indices are valid (safety check)
+                                valid_idxs = [i for i in idxs if i < len(st.session_state.pareto_data)]
                                 
-                                # Clean up columns for display
-                                display_cols = ['Outcome 1', 'Outcome 2'] + vars_
-                                st.dataframe(selected_data[display_cols].style.format("{:.4f}"), use_container_width=True)
-                                
-                                # Optional: Download button
-                                csv = selected_data[display_cols].to_csv(index=False).encode('utf-8')
-                                st.download_button("Download Selected Points", csv, "selected_tradeoffs.csv", "text/csv")
+                                if valid_idxs:
+                                    selected_data = st.session_state.pareto_data.iloc[valid_idxs]
+                                    
+                                    # Clean columns
+                                    display_cols = ['Outcome 1', 'Outcome 2'] + vars_
+                                    st.dataframe(selected_data[display_cols].style.format("{:.4f}"), use_container_width=True)
+                                    
+                                    # Download
+                                    csv = selected_data[display_cols].to_csv(index=False).encode('utf-8')
+                                    tc2.download_button("Download Selection", csv, "selected_tradeoffs.csv", "text/csv")
                             else:
-                                st.info("👆 Click on a dot in the chart above to see the recipe details here.")
+                                st.info("👆 Click points on the chart to build a comparison table here.")
                         else:
                             st.warning("Selections changed. Please click 'Generate/Refresh' to update the plot.")
 
                 with tab2:
                     st.markdown("#### Parallel Coordinates")
-                    st.markdown("This plot connects inputs (Dosages) to outputs (Model Outcomes). Use it to trace which variable combinations lead to desired results.")
+                    st.markdown("This plot connects inputs (Dosages) to outputs (Model Outcomes).")
                     if st.button("Generate Parallel Coords"):
                         with st.spinner("Generating parallel coordinates (500 points)..."):
-                            # Note: Parallel coords usually benefit from fewer points to be readable
                             fig, _ = plot_parallel_coordinates(model_1, model_2, vars_, bounds, num_samples=min(500, sample_size))
                             st.plotly_chart(fig, use_container_width=True)
 
