@@ -176,24 +176,16 @@ def render():
                     
                 if m1_name == m2_name:
                     st.warning("Please select two different models to see a meaningful trade-off.")
-                
-                # Derive bounds from experimental data
-                model_1 = st.session_state.wrapped_models[m1_name]
-                model_2 = st.session_state.wrapped_models[m2_name]
-                vars_ = st.session_state.independent_vars
-                
-                bounds = []
-                for var in vars_:
-                    d_min = float(st.session_state.exp_df[var].min())
-                    d_max = float(st.session_state.exp_df[var].max())
-                    bounds.append((d_min, d_max))
 
-                # --- APPEARANCE CONTROLS FOR PARETO ---
-                with st.expander("⚙️ Customize Plot Appearance", expanded=False):
+                # --- APPEARANCE & SETTINGS ---
+                with st.expander("⚙️ Customize Plot & Simulation", expanded=False):
                     st.write("**Simulation Settings**")
-                    sample_size = st.slider("Number of Simulation Points", min_value=500, max_value=5000, value=2000, step=100, 
-                                          help="Higher numbers provide a denser cloud but take longer to generate.")
+                    sample_size = st.slider("Number of Simulation Points", 500, 5000, 2000, 100)
                     
+                    # NEW TOGGLE for Control/Zero Handling
+                    use_second_min = st.checkbox("Use Second Lowest Value as Minimum (Exclude 0/Control)", value=False, 
+                                                 help="If checked, the simulation will not use 0 (or the absolute lowest value) as the lower bound, but the next lowest value found in your data.")
+
                     st.write("**Visual Settings**")
                     p_c1, p_c2 = st.columns(2)
                     pt_size = p_c1.slider("Point Size", 2, 20, 6)
@@ -205,6 +197,27 @@ def render():
                     custom_x_label = p_t1.text_input("X Axis Label", value=f"Outcome: {m1_name}")
                     custom_y_label = p_t2.text_input("Y Axis Label", value=f"Outcome: {m2_name}")
 
+                # --- CALCULATE BOUNDS BASED ON TOGGLE ---
+                model_1 = st.session_state.wrapped_models[m1_name]
+                model_2 = st.session_state.wrapped_models[m2_name]
+                vars_ = st.session_state.independent_vars
+                
+                bounds = []
+                for var in vars_:
+                    # Default: Use Absolute Min
+                    d_min = float(st.session_state.exp_df[var].min())
+                    d_max = float(st.session_state.exp_df[var].max())
+                    
+                    # Optional: Use Second Min
+                    if use_second_min and var in st.session_state.variable_stats:
+                        # Stats are stored as (min, second_min, max, mean, std) - checking length to be safe
+                        stats = st.session_state.variable_stats[var]
+                        if len(stats) >= 2:
+                            # Use second_min (index 1)
+                            d_min = stats[1]
+
+                    bounds.append((d_min, d_max))
+
                 st.write("---")
                 tab1, tab2 = st.tabs(["Pareto Frontier (Scatter)", "Parallel Coordinates"])
                 
@@ -215,7 +228,7 @@ def render():
                     # 1. Generate/Refresh Button
                     if st.button("Generate/Refresh Pareto Plot"):
                         with st.spinner(f"Sampling design space ({sample_size} points)..."):
-                            # Logic function must return (fig, df)
+                            # Logic function returns (fig, df)
                             fig, df = plot_pareto_frontier(model_1, model_2, vars_, bounds, num_samples=sample_size)
                             
                             # Store in Session State
@@ -225,13 +238,13 @@ def render():
                             # RESET accumulation on new generation
                             st.session_state.pareto_selected_indices = set()
 
-                    # 2. Display Plot (if it exists in state)
+                    # 2. Display Plot (if it exists)
                     if 'pareto_fig' in st.session_state:
                         # Check stale state
                         stored_m1, stored_m2 = st.session_state.get('pareto_model_names', (None, None))
                         if stored_m1 == m1_name and stored_m2 == m2_name:
                             
-                            # Apply Custom Appearance Updates
+                            # Apply Custom Appearance
                             current_fig = st.session_state.pareto_fig
                             current_fig.update_layout(
                                 title=custom_pareto_title,
@@ -250,11 +263,9 @@ def render():
                             )
 
                             # 3. Handle Cumulative Selection
-                            # Initialize set if needed
                             if 'pareto_selected_indices' not in st.session_state:
                                 st.session_state.pareto_selected_indices = set()
 
-                            # If user clicked something new, add it to our set
                             current_click = selection_event.selection.get("point_indices", [])
                             if current_click:
                                 for idx in current_click:
@@ -264,25 +275,19 @@ def render():
                             if st.session_state.pareto_selected_indices:
                                 st.subheader("Selected Solutions (Accumulated)")
                                 
-                                # Controls for the table
                                 tc1, tc2 = st.columns([1, 4])
                                 if tc1.button("Clear Selection Table"):
                                     st.session_state.pareto_selected_indices = set()
                                     st.rerun()
 
-                                # Retrieve rows
                                 idxs = sorted(list(st.session_state.pareto_selected_indices))
-                                # Ensure indices are valid (safety check)
                                 valid_idxs = [i for i in idxs if i < len(st.session_state.pareto_data)]
                                 
                                 if valid_idxs:
                                     selected_data = st.session_state.pareto_data.iloc[valid_idxs]
-                                    
-                                    # Clean columns
                                     display_cols = ['Outcome 1', 'Outcome 2'] + vars_
                                     st.dataframe(selected_data[display_cols].style.format("{:.4f}"), use_container_width=True)
                                     
-                                    # Download
                                     csv = selected_data[display_cols].to_csv(index=False).encode('utf-8')
                                     tc2.download_button("Download Selection", csv, "selected_tradeoffs.csv", "text/csv")
                             else:
