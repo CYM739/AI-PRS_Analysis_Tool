@@ -2,6 +2,7 @@
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 import matplotlib.pyplot as plt
 from .data_processing import predict_surface, expand_terms
 from .optimization import objective_function
@@ -445,4 +446,105 @@ def plot_synergy_heatmap(synergy_matrix, drug1_name, drug2_name, model_name):
         xaxis=dict(type='category'), # Explicitly force categorical axis
         yaxis=dict(type='category')  # Explicitly force categorical axis
     )
+    return fig
+
+def plot_pareto_frontier(model_1, model_2, independent_vars, bounds, num_samples=2000):
+    """
+    Generates a scatter plot of Model 1 vs Model 2 outcomes to visualize the trade-off
+    (Pareto Frontier) using random sampling of the design space.
+    """
+    # 1. Generate random samples across the design space
+    samples = []
+    for _ in range(num_samples):
+        sample = {}
+        for i, var in enumerate(independent_vars):
+            low, high = bounds[i]
+            sample[var] = np.random.uniform(low, high)
+        samples.append(sample)
+    
+    df = pd.DataFrame(samples)
+    
+    # 2. Predict outcomes for both models
+    # Models are expected to have a .predict() method that accepts a DataFrame
+    pred_1 = model_1.predict(df)
+    pred_2 = model_2.predict(df)
+    
+    df['Outcome 1'] = pred_1
+    df['Outcome 2'] = pred_2
+    
+    # 3. Create Scatter Plot
+    fig = px.scatter(
+        df, 
+        x='Outcome 1', 
+        y='Outcome 2', 
+        hover_data=independent_vars,
+        title="Trade-off Analysis (Pareto Frontier Approximation)",
+        template="plotly_white",
+        opacity=0.6
+    )
+    
+    fig.update_layout(
+        xaxis_title=f"Model 1 Output",
+        yaxis_title=f"Model 2 Output",
+        font=dict(family="Arial", size=12),
+        height=600
+    )
+    
+    return fig
+
+def plot_parallel_coordinates(model_1, model_2, independent_vars, bounds, num_samples=500):
+    """
+    Generates a Parallel Coordinates plot to connect Inputs -> Outputs.
+    Visualizes which combination of inputs leads to high/low outcomes.
+    """
+    # 1. Generate samples (smaller batch for cleaner plot)
+    samples = []
+    for _ in range(num_samples):
+        sample = {}
+        for i, var in enumerate(independent_vars):
+            low, high = bounds[i]
+            sample[var] = np.random.uniform(low, high)
+        samples.append(sample)
+    
+    df = pd.DataFrame(samples)
+    
+    # 2. Predict
+    pred_1 = model_1.predict(df)
+    pred_2 = model_2.predict(df)
+    
+    df['Model 1'] = pred_1
+    df['Model 2'] = pred_2
+    
+    # 3. Create dimensions list for Plotly
+    dimensions = []
+    
+    # Add Inputs
+    for var in independent_vars:
+        dimensions.append(dict(range=[df[var].min(), df[var].max()],
+                               label=var, values=df[var]))
+                               
+    # Add Outputs (Highlighted)
+    dimensions.append(dict(range=[df['Model 1'].min(), df['Model 1'].max()],
+                           label='Model 1', values=df['Model 1']))
+    dimensions.append(dict(range=[df['Model 2'].min(), df['Model 2'].max()],
+                           label='Model 2', values=df['Model 2']))
+
+    # 4. Create Plot
+    fig = go.Figure(data=
+        go.Parcoords(
+            line = dict(color = df['Model 1'], # Color lines by Model 1 performance
+                       colorscale = 'Viridis',
+                       showscale = True,
+                       cmin = df['Model 1'].min(),
+                       cmax = df['Model 1'].max(),
+                       colorbar=dict(title="Model 1 Value")),
+            dimensions = dimensions
+        )
+    )
+    
+    fig.update_layout(
+        title="Parallel Coordinates: Dosages vs Outcomes",
+        height=600
+    )
+    
     return fig
