@@ -1,6 +1,8 @@
 # src/views/plotting_view.py
 import streamlit as st
-from logic.plotting import plot_tradeoff_contour, plot_tradeoff_analysis, plot_response_curve
+from logic.plotting import (plot_tradeoff_contour, plot_tradeoff_analysis, 
+                            plot_response_curve, plot_pareto_frontier, 
+                            plot_parallel_coordinates)
 from utils.ui_helpers import format_variable_options, display_surface_plot
 
 def render():
@@ -16,9 +18,9 @@ def render():
     if len(st.session_state.independent_vars) >= 2:
         plot_type = st.radio(
             "Select Plot Type",
-            ["3D Surface", "2D Trade-Off Contour", "2D Trade-Off Analysis"],
+            ["3D Surface", "Multi-Model Trade-off (Pareto)", "2D Trade-Off Analysis"],
             horizontal=True,
-            captions=["", "", "Visualize how two models change relative to one variable."]
+            captions=["Visualize single model", "Global trade-off between two models", "Detailed line plot analysis"]
         )
         st.write("---")
 
@@ -88,7 +90,7 @@ def render():
 
                         st.info("The comparison surface will be plotted using the same fixed values as the primary model to ensure a valid comparison.")
 
-            with st.expander("🎨 Customize Plot Appearance"):
+            with st.expander("⚙️ Customize Plot Appearance"):
                 st.write("**Titles and Labels**")
                 custom_main_title = st.text_input("Main Title", placeholder="Leave blank for default")
                 ax_c1, ax_c2, ax_c3 = st.columns(3)
@@ -149,57 +151,53 @@ def render():
             plot_config = {'toImageButtonOptions': {'format': 'png','filename': f'{model_to_plot_1}_surface_plot','height': 700,'width': 700,'scale': download_scale}}
             display_surface_plot(plot_parameters, plot_config)
 
-        elif plot_type == "2D Trade-Off Contour":
-            st.subheader("Generate a 2D Trade-Off Contour Plot")
+        elif plot_type == "Multi-Model Trade-off (Pareto)":
+            st.subheader("Global Trade-off Analysis")
+            st.info("Visualize the relationship and trade-offs between two different models across the entire design space.")
+            
             if len(formatted_models) < 2:
-                st.warning("You need at least two outcome models to generate a trade-off plot.")
+                st.warning("You need at least two models to perform trade-off analysis.")
             else:
                 c1, c2 = st.columns(2)
-                model_1_formatted = c1.selectbox("Select Model 1 (Red regions)", options=formatted_models, key="contour_model_1")
-                model_1_name = model_1_formatted.split(":")[0]
+                with c1:
+                    model_1_formatted = st.selectbox("Select Model 1 (X-Axis / Color)", formatted_models, key="tr_m1")
+                    m1_name = model_1_formatted.split(":")[0]
+                with c2:
+                    model_2_formatted = st.selectbox("Select Model 2 (Y-Axis)", formatted_models, key="tr_m2")
+                    m2_name = model_2_formatted.split(":")[0]
+                    
+                if m1_name == m2_name:
+                    st.warning("Please select two different models to see a meaningful trade-off.")
+                
+                # Derive bounds from experimental data
+                model_1 = st.session_state.wrapped_models[m1_name]
+                model_2 = st.session_state.wrapped_models[m2_name]
+                vars_ = st.session_state.independent_vars
+                
+                bounds = []
+                for var in vars_:
+                    d_min = float(st.session_state.exp_df[var].min())
+                    d_max = float(st.session_state.exp_df[var].max())
+                    bounds.append((d_min, d_max))
 
-                model_2_options = [m for m in formatted_models if not m.startswith(model_1_name)]
-                model_2_formatted = c2.selectbox("Select Model 2 (Blue regions)", options=model_2_options, key="contour_model_2")
-                model_2_name = model_2_formatted.split(":")[0]
-
-                c3, c4 = st.columns(2)
-                formatted_vars = format_variable_options(st.session_state.independent_vars)
-                x_var_formatted = c3.selectbox("X-axis variable", options=formatted_vars, key="contour_x")
-                x_var_contour = x_var_formatted.split(":")[0]
-
-                y_options_formatted = [v for v in formatted_vars if not v.startswith(x_var_contour)]
-                y_var_formatted = c4.selectbox("Y-axis variable", options=y_options_formatted, key="contour_y")
-                y_var_contour = y_var_formatted.split(":")[0]
-
-                fixed_vars_contour = {}
-                other_vars_contour = [v for v in st.session_state.independent_vars if v not in [x_var_contour, y_var_contour]]
-
-                if other_vars_contour:
-                    st.write("---")
-                    st.write("**Set Fixed Values for Other Variables:**")
-                    for var in other_vars_contour:
-                        unique_vals = st.session_state.unique_variable_values.get(var, [])
-                        _, second_min, _ = st.session_state.variable_stats[var]
-                        default_index = 0
-                        if unique_vals and second_min in unique_vals:
-                            try: default_index = unique_vals.index(second_min)
-                            except ValueError: default_index = 0
-                        desc = st.session_state.variable_descriptions.get(var, 'No description')
-                        fixed_vars_contour[var] = st.selectbox(
-                            label=f"Fixed value for {var} ({desc})", options=unique_vals,
-                            index=default_index, key=f"contour_select_{var}"
-                        )
-
-                if st.button("Generate 2D Trade-Off Plot"):
-                    model_1_obj = st.session_state.wrapped_models[model_1_name]
-                    model_2_obj = st.session_state.wrapped_models[model_2_name]
-                    fig = plot_tradeoff_contour(
-                        OLS_model_1=model_1_obj, OLS_model_2=model_2_obj, model_name_1=model_1_name,
-                        model_name_2=model_2_name, all_alphabet_vars=st.session_state.independent_vars,
-                        x_var=x_var_contour, y_var=y_var_contour, fixed_vars_dict=fixed_vars_contour,
-                        dataframe=st.session_state.expanded_df, variable_descriptions=st.session_state.variable_descriptions
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
+                st.write("---")
+                tab1, tab2 = st.tabs(["Pareto Frontier (Scatter)", "Parallel Coordinates"])
+                
+                with tab1:
+                    st.markdown("#### Pareto Frontier")
+                    st.markdown("This plot simulates thousands of experiments to show the **feasible region** of outcomes. Points on the 'edge' represent the best possible trade-offs.")
+                    if st.button("Generate Pareto Plot"):
+                        with st.spinner("Sampling design space (2000 points)..."):
+                            fig = plot_pareto_frontier(model_1, model_2, vars_, bounds)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                with tab2:
+                    st.markdown("#### Parallel Coordinates")
+                    st.markdown("This plot connects inputs (Dosages) to outputs (Model Outcomes). Use it to trace which variable combinations lead to desired results.")
+                    if st.button("Generate Parallel Coords"):
+                        with st.spinner("Generating parallel coordinates (500 points)..."):
+                            fig = plot_parallel_coordinates(model_1, model_2, vars_, bounds)
+                            st.plotly_chart(fig, use_container_width=True)
 
         elif plot_type == "2D Trade-Off Analysis":
             st.subheader("Generate a 2D Trade-Off Analysis Plot")
@@ -254,7 +252,7 @@ def render():
         single_var = st.session_state.independent_vars[0]
         model_obj = st.session_state.wrapped_models[model_to_plot]
 
-        with st.expander("🎨 Customize Plot Appearance"):
+        with st.expander("⚙️ Customize Plot Appearance"):
             show_actual_data_2d = st.toggle("Show actual data points", value=True, key="main_plot_2d_toggle_data")
             st.write("**Titles and Labels**")
             custom_main_title_2d = st.text_input("Main Title", placeholder="Leave blank for default", key="main_plot_2d_title")
