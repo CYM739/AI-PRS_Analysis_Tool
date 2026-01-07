@@ -1,8 +1,13 @@
 # src/views/plotting_view.py
 import streamlit as st
-from logic.plotting import (plot_tradeoff_contour, plot_tradeoff_analysis, 
-                            plot_response_curve, plot_pareto_frontier, 
-                            plot_parallel_coordinates)
+import plotly.express as px
+from logic.plotting import (
+    plot_tradeoff_contour, 
+    plot_tradeoff_analysis, 
+    plot_response_curve, 
+    plot_pareto_frontier, 
+    plot_parallel_coordinates
+)
 from utils.ui_helpers import format_variable_options, display_surface_plot
 
 def render():
@@ -15,6 +20,7 @@ def render():
         
     formatted_models = format_variable_options(st.session_state.wrapped_models.keys())
 
+    # Check how many independent variables we have to decide available plot types
     if len(st.session_state.independent_vars) >= 2:
         plot_type = st.radio(
             "Select Plot Type",
@@ -24,6 +30,7 @@ def render():
         )
         st.write("---")
 
+        # --- PLOT TYPE 1: 3D SURFACE ---
         if plot_type == "3D Surface":
             st.subheader("Generate a 3D Response Surface Plot")
             col1, col2, col3 = st.columns(3)
@@ -151,6 +158,7 @@ def render():
             plot_config = {'toImageButtonOptions': {'format': 'png','filename': f'{model_to_plot_1}_surface_plot','height': 700,'width': 700,'scale': download_scale}}
             display_surface_plot(plot_parameters, plot_config)
 
+        # --- PLOT TYPE 2: PARETO FRONTIER (Trade-off) ---
         elif plot_type == "Multi-Model Trade-off (Pareto)":
             st.subheader("Global Trade-off Analysis")
             st.info("Visualize the relationship and trade-offs between two different models across the entire design space.")
@@ -180,6 +188,23 @@ def render():
                     d_max = float(st.session_state.exp_df[var].max())
                     bounds.append((d_min, d_max))
 
+                # --- NEW APPEARANCE CONTROLS FOR PARETO ---
+                with st.expander("⚙️ Customize Plot Appearance", expanded=False):
+                    st.write("**Simulation Settings**")
+                    sample_size = st.slider("Number of Simulation Points", min_value=500, max_value=5000, value=2000, step=100, 
+                                          help="Higher numbers provide a denser cloud but take longer to generate.")
+                    
+                    st.write("**Visual Settings**")
+                    p_c1, p_c2 = st.columns(2)
+                    pt_size = p_c1.slider("Point Size", 2, 20, 6)
+                    pt_opacity = p_c2.slider("Point Opacity", 0.1, 1.0, 0.6)
+                    
+                    st.write("**Titles**")
+                    custom_pareto_title = st.text_input("Plot Title", value="Trade-off Analysis (Pareto Frontier Approximation)")
+                    p_t1, p_t2 = st.columns(2)
+                    custom_x_label = p_t1.text_input("X Axis Label", value=f"Outcome: {m1_name}")
+                    custom_y_label = p_t2.text_input("Y Axis Label", value=f"Outcome: {m2_name}")
+
                 st.write("---")
                 tab1, tab2 = st.tabs(["Pareto Frontier (Scatter)", "Parallel Coordinates"])
                 
@@ -187,8 +212,18 @@ def render():
                     st.markdown("#### Pareto Frontier")
                     st.markdown("This plot simulates thousands of experiments to show the **feasible region** of outcomes. Points on the 'edge' represent the best possible trade-offs.")
                     if st.button("Generate Pareto Plot"):
-                        with st.spinner("Sampling design space (2000 points)..."):
-                            fig = plot_pareto_frontier(model_1, model_2, vars_, bounds)
+                        with st.spinner(f"Sampling design space ({sample_size} points)..."):
+                            # Call logic function
+                            fig = plot_pareto_frontier(model_1, model_2, vars_, bounds, num_samples=sample_size)
+                            
+                            # Apply Custom Appearance Updates
+                            fig.update_layout(
+                                title=custom_pareto_title,
+                                xaxis_title=custom_x_label,
+                                yaxis_title=custom_y_label
+                            )
+                            fig.update_traces(marker=dict(size=pt_size, opacity=pt_opacity))
+                            
                             st.plotly_chart(fig, use_container_width=True)
                             
                 with tab2:
@@ -196,9 +231,11 @@ def render():
                     st.markdown("This plot connects inputs (Dosages) to outputs (Model Outcomes). Use it to trace which variable combinations lead to desired results.")
                     if st.button("Generate Parallel Coords"):
                         with st.spinner("Generating parallel coordinates (500 points)..."):
-                            fig = plot_parallel_coordinates(model_1, model_2, vars_, bounds)
+                            # Note: Parallel coords usually benefit from fewer points to be readable
+                            fig = plot_parallel_coordinates(model_1, model_2, vars_, bounds, num_samples=min(500, sample_size))
                             st.plotly_chart(fig, use_container_width=True)
 
+        # --- PLOT TYPE 3: 2D LINE ANALYSIS (Original) ---
         elif plot_type == "2D Trade-Off Analysis":
             st.subheader("Generate a 2D Trade-Off Analysis Plot")
             st.info("Select two models and an independent variable to see how the outcomes and their difference change as that single variable changes.")
@@ -244,6 +281,7 @@ def render():
             else:
                 st.warning("You need at least two outcome models to generate a trade-off plot.")
 
+    # --- SINGLE VARIABLE CASE ---
     else: 
         st.subheader("Generate 2D Response Curve")
         st.info("Since there is only one independent variable, an interactive 2D plot is shown to illustrate its effect on the outcome.")
