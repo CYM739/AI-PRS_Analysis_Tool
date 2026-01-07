@@ -448,90 +448,11 @@ def plot_synergy_heatmap(synergy_matrix, drug1_name, drug2_name, model_name):
     )
     return fig
 
-def plot_pareto_frontier(model_1, model_2, independent_vars, bounds, num_samples=2000,
-                         main_title=None, x_title=None, y_title=None,
-                         axis_title_font_size=12, tick_font_size=10,
-                         x_range=None, y_range=None):
+def plot_pareto_frontier(model_1, model_2, independent_vars, bounds, num_samples=2000):
     """
-    Generates a scatter plot of Model 1 vs Model 2 outcomes to visualize the trade-off.
-    Supports customization of titles, fonts, and outcome filtering.
+    Returns (fig, df) so the UI can access the underlying data of the plot.
     """
-    # 1. Generate random samples across the design space
-    samples = []
-    for _ in range(num_samples):
-        sample = {}
-        for i, var in enumerate(independent_vars):
-            low, high = bounds[i]
-            sample[var] = np.random.uniform(low, high)
-        samples.append(sample)
-    
-    df = pd.DataFrame(samples)
-    
-    # 2. Predict outcomes
-    pred_1 = model_1.predict(df)
-    pred_2 = model_2.predict(df)
-    
-    df['Outcome 1'] = pred_1
-    df['Outcome 2'] = pred_2
-    
-    # 3. Filter outcomes based on user range
-    if x_range:
-        df = df[(df['Outcome 1'] >= x_range[0]) & (df['Outcome 1'] <= x_range[1])]
-    if y_range:
-        df = df[(df['Outcome 2'] >= y_range[0]) & (df['Outcome 2'] <= y_range[1])]
-    
-    if df.empty:
-        # Return empty fig with message if filter removes all points
-        fig = go.Figure()
-        fig.update_layout(
-            title="No data points found in the specified range.",
-            xaxis={"visible": False}, yaxis={"visible": False}
-        )
-        return fig
-
-    # 4. Create Scatter Plot
-    fig = px.scatter(
-        df, 
-        x='Outcome 1', 
-        y='Outcome 2', 
-        hover_data=independent_vars,
-        template="plotly_white",
-        opacity=0.6
-    )
-    
-    # 5. Apply Styling
-    default_title = "Trade-off Analysis (Pareto Frontier Approximation)"
-    default_x = "Model 1 Output"
-    default_y = "Model 2 Output"
-    
-    fig.update_layout(
-        title=dict(
-            text=main_title if main_title else default_title,
-            font=dict(size=axis_title_font_size + 4) # Make main title slightly larger
-        ),
-        xaxis_title=dict(
-            text=x_title if x_title else default_x,
-            font=dict(size=axis_title_font_size)
-        ),
-        yaxis_title=dict(
-            text=y_title if y_title else default_y,
-            font=dict(size=axis_title_font_size)
-        ),
-        height=600
-    )
-    
-    fig.update_xaxes(tickfont=dict(size=tick_font_size))
-    fig.update_yaxes(tickfont=dict(size=tick_font_size))
-    
-    return fig
-
-def plot_parallel_coordinates(model_1, model_2, independent_vars, bounds, num_samples=500,
-                              main_title=None, x_range=None, y_range=None):
-    """
-    Generates a Parallel Coordinates plot.
-    Supports title customization and outcome filtering.
-    """
-    # 1. Generate samples
+    # 1. Generate random samples
     samples = []
     for _ in range(num_samples):
         sample = {}
@@ -546,50 +467,65 @@ def plot_parallel_coordinates(model_1, model_2, independent_vars, bounds, num_sa
     pred_1 = model_1.predict(df)
     pred_2 = model_2.predict(df)
     
+    df['Outcome 1'] = pred_1
+    df['Outcome 2'] = pred_2
+    
+    # 3. Plot
+    fig = px.scatter(
+        df, 
+        x='Outcome 1', 
+        y='Outcome 2', 
+        hover_data=independent_vars,
+        title="Trade-off Analysis (Pareto Frontier Approximation)",
+        template="plotly_white",
+        opacity=0.6
+    )
+    
+    fig.update_layout(
+        xaxis_title="Model 1 Output",
+        yaxis_title="Model 2 Output",
+        font=dict(family="Arial", size=12),
+        height=600,
+        clickmode='event+select' # Enable click selection
+    )
+    
+    return fig, df  # <--- RETURN BOTH
+
+def plot_parallel_coordinates(model_1, model_2, independent_vars, bounds, num_samples=500):
+    """
+    Returns (fig, df).
+    """
+    samples = []
+    for _ in range(num_samples):
+        sample = {}
+        for i, var in enumerate(independent_vars):
+            low, high = bounds[i]
+            sample[var] = np.random.uniform(low, high)
+        samples.append(sample)
+    
+    df = pd.DataFrame(samples)
+    pred_1 = model_1.predict(df)
+    pred_2 = model_2.predict(df)
+    
     df['Model 1'] = pred_1
     df['Model 2'] = pred_2
-
-    # 3. Filter outcomes
-    if x_range:
-        df = df[(df['Model 1'] >= x_range[0]) & (df['Model 1'] <= x_range[1])]
-    if y_range:
-        df = df[(df['Model 2'] >= y_range[0]) & (df['Model 2'] <= y_range[1])]
     
-    if df.empty:
-        fig = go.Figure()
-        fig.update_layout(title="No data points found in the specified range.")
-        return fig
-
-    # 4. Create dimensions
     dimensions = []
-    
-    # Inputs
     for var in independent_vars:
-        dimensions.append(dict(range=[df[var].min(), df[var].max()],
-                               label=var, values=df[var]))
-                               
-    # Outputs
-    dimensions.append(dict(range=[df['Model 1'].min(), df['Model 1'].max()],
-                           label='Model 1', values=df['Model 1']))
-    dimensions.append(dict(range=[df['Model 2'].min(), df['Model 2'].max()],
-                           label='Model 2', values=df['Model 2']))
+        dimensions.append(dict(range=[df[var].min(), df[var].max()], label=var, values=df[var]))
+    
+    dimensions.append(dict(range=[df['Model 1'].min(), df['Model 1'].max()], label='Model 1', values=df['Model 1']))
+    dimensions.append(dict(range=[df['Model 2'].min(), df['Model 2'].max()], label='Model 2', values=df['Model 2']))
 
-    # 5. Create Plot
     fig = go.Figure(data=
         go.Parcoords(
-            line = dict(color = df['Model 1'],
-                       colorscale = 'Viridis',
-                       showscale = True,
-                       cmin = df['Model 1'].min(),
-                       cmax = df['Model 1'].max(),
-                       colorbar=dict(title="Model 1")),
+            line = dict(color = df['Model 1'], colorscale = 'Viridis', showscale = True,
+                       cmin = df['Model 1'].min(), cmax = df['Model 1'].max(),
+                       colorbar=dict(title="Model 1 Value")),
             dimensions = dimensions
         )
     )
     
-    fig.update_layout(
-        title=main_title if main_title else "Parallel Coordinates: Dosages vs Outcomes",
-        height=600
-    )
+    fig.update_layout(title="Parallel Coordinates", height=600)
     
-    return fig
+    return fig, df # <--- RETURN BOTH
