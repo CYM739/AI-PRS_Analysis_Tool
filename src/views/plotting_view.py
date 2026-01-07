@@ -1,6 +1,7 @@
 # src/views/plotting_view.py
 import streamlit as st
 import plotly.express as px
+import pandas as pd  # Added for data handling
 from logic.plotting import (
     plot_tradeoff_contour, 
     plot_tradeoff_analysis, 
@@ -182,9 +183,12 @@ def render():
                     st.write("**Simulation Settings**")
                     sample_size = st.slider("Number of Simulation Points", 500, 5000, 2000, 100)
                     
-                    # NEW TOGGLE for Control/Zero Handling
+                    # TOGGLE for Control/Zero Handling
                     use_second_min = st.checkbox("Use Second Lowest Value as Minimum (Exclude 0/Control)", value=False, 
                                                  help="If checked, the simulation will not use 0 (or the absolute lowest value) as the lower bound, but the next lowest value found in your data.")
+
+                    # TOGGLE for Diagonal Line
+                    show_diagonal = st.checkbox("Show x=y Diagonal Line", value=True, help="Draws a dashed line where Model 1 = Model 2")
 
                     st.write("**Visual Settings**")
                     p_c1, p_c2 = st.columns(2)
@@ -252,6 +256,22 @@ def render():
                                 yaxis_title=custom_y_label
                             )
                             current_fig.update_traces(marker=dict(size=pt_size, opacity=pt_opacity))
+
+                            # Apply Diagonal Line
+                            # Clear existing shapes first to avoid duplicates or persisting after toggle off
+                            current_fig.layout.shapes = []
+                            if show_diagonal:
+                                # Calculate extent of the data to draw the line
+                                df_data = st.session_state.pareto_data
+                                all_outcomes = pd.concat([df_data['Outcome 1'], df_data['Outcome 2']])
+                                v_min, v_max = all_outcomes.min(), all_outcomes.max()
+                                
+                                current_fig.add_shape(
+                                    type="line",
+                                    x0=v_min, y0=v_min,
+                                    x1=v_max, y1=v_max,
+                                    line=dict(color="Gray", width=2, dash="dash"),
+                                )
 
                             # RENDER WITH SELECTION
                             selection_event = st.plotly_chart(
