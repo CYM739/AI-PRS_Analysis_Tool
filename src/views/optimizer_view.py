@@ -6,6 +6,7 @@ import concurrent.futures
 from datetime import datetime
 import json
 from logic.optimization import (run_multi_objective_penalty_optimization,
+                                  run_weighted_tradeoff_optimization, 
                                   difference_objective_function, run_optimization,
                                   run_grid_search_optimization, run_classic_multi_objective_optimization,
                                   objective_function)
@@ -148,39 +149,41 @@ def render_multi_objective_optimizer(formatted_models):
 
 
 def render_weighted_score_ui(formatted_models):
-    """Renders the UI for the modern weighted score method."""
+    """Renders the UI for the modern weighted score method with dual-range constraints."""
     st.info(
         """
-        This tool finds an optimal solution by first constraining one model (Goal 1)
-        and then finding the best possible outcome for a second model (Goal 2), ranked by a weighted score.
+        This tool finds an optimal solution by constraining **BOTH** models to specific ranges 
+        and then finding the best trade-off (Weighted Score) within those limits.
         """
     )
     c1, c2 = st.columns(2)
     with c1:
-        st.write("**Goal 1 (Constraining Model)**")
-        model_1_formatted = st.selectbox("Select Model to Constrain", options=formatted_models, key="adv_model_1", on_change=clear_optimizer_results)
+        st.write("**Goal 1 (Model A)**")
+        model_1_formatted = st.selectbox("Select Model A", options=formatted_models, key="adv_model_1", on_change=clear_optimizer_results)
         model_1_name = model_1_formatted.split(":")[0]
 
-        r_min = st.number_input(f"Minimum acceptable value for {model_1_name}", value=0.0, format="%.4f")
-        r_max = st.number_input(f"Maximum acceptable value for {model_1_name}", value=1.0, format="%.4f")
+        r_min_1 = st.number_input(f"Min value for {model_1_name}", value=0.0, format="%.4f", key="rmin1")
+        r_max_1 = st.number_input(f"Max value for {model_1_name}", value=1.0, format="%.4f", key="rmax1")
 
     with c2:
-        st.write("**Goal 2 (Optimizing Model)**")
+        st.write("**Goal 2 (Model B)**")
         model_2_options = [m for m in formatted_models if not m.startswith(model_1_name)]
         if not model_2_options:
             st.warning("You need at least two models to perform this analysis.")
             return
 
-        model_2_formatted = st.selectbox("Select Model to Optimize", options=model_2_options, key="adv_model_2", on_change=clear_optimizer_results)
+        model_2_formatted = st.selectbox("Select Model B", options=model_2_options, key="adv_model_2", on_change=clear_optimizer_results)
         model_2_name = model_2_formatted.split(":")[0]
-
-        target_model_goal = st.radio("Optimization Goal", ("Maximize", "Minimize"), key="multi_opt_goal", horizontal=True)
+        
+        # New: Range inputs for Model 2
+        r_min_2 = st.number_input(f"Min value for {model_2_name}", value=0.0, format="%.4f", key="rmin2")
+        r_max_2 = st.number_input(f"Max value for {model_2_name}", value=1.0, format="%.4f", key="rmax2")
 
     with st.expander("Weighted Score Configuration"):
-        st.write("Configure the weights for the secondary optimization:")
+        st.write("Configure the weights to define the 'Best Trade-off'. Higher weight = more priority.")
         w1 = st.slider(f"Weight for {model_1_name}", 0.0, 1.0, 0.5, 0.05)
         w2 = st.slider(f"Weight for {model_2_name}", 0.0, 1.0, 0.5, 0.05)
-        w_dosage = st.slider("Weight for Total Dosage", 0.0, 1.0, 0.1, 0.05)
+        w_dosage = st.slider("Weight for Total Dosage (Penalty)", 0.0, 1.0, 0.1, 0.05)
 
     st.write("---")
     st.write("**Define Search Space and Algorithm**")
@@ -192,26 +195,38 @@ def render_weighted_score_ui(formatted_models):
         model_2 = st.session_state.wrapped_models[model_2_name]
         independent_vars = st.session_state.independent_vars
 
-        with st.spinner("Stage 1/3: Finding optimal constrained solution..."):
+        # Stage 1: Find Feasible Region
+        with st.spinner("Stage 1/3: Finding feasible solution within ranges..."):
             constrained_result = run_multi_objective_penalty_optimization(
-                model_1, model_2, independent_vars, bounds, start_points, r_min, r_max,
-                target_model_goal, algorithm, algo_params
+                model_1, model_2, independent_vars, bounds, start_points, 
+                r_min_1, r_max_1, r_min_2, r_max_2,
+                algorithm, algo_params
             )
-            if not constrained_result.success:
-                st.error("Stage 1 Failure: Could not find an optimal constrained solution.")
-                st.stop()
+            if not constrained_result.success or constrained_result.fun > 0.1: 
+                # If penalty > 0.1, it implies we couldn't satisfy the ranges
+                st.warning("Stage 1 Warning: Could not find a solution strictly inside both ranges. Proceeding with best attempt...")
 
-        with st.spinner("Stage 2/3: Finding best weighted solutions near optimum..."):
+        # Stage 2: Grid Search (Exploration)
+        with st.spinner("Stage 2/3: Exploring weighted solutions..."):
             config = load_config()
             tolerance = config.get("multi_opt_tolerance", 0.1)
             weights = {"model_1": w1, "model_2": w2, "total_dosage": w_dosage}
+            
+            # Note: Grid search primarily slides along Model 1. 
+            # It may produce points outside Model 2's range, but gives good context.
             top_5_weighted = run_grid_search_optimization(
-                model_1, model_2, independent_vars, bounds, start_points, algorithm, algo_params, constrained_result, weights, tolerance
+                model_1, model_2, independent_vars, bounds, start_points, 
+                algorithm, algo_params, constrained_result, weights, tolerance
             )
 
-        with st.spinner("Stage 3/3: Finding the best overall trade-off..."):
-            diff_fun = lambda x: difference_objective_function(x, model_1, model_2, independent_vars, target_model_goal)
-            tradeoff_result = run_optimization(diff_fun, bounds, start_points, [], algorithm, algo_params)
+        # Stage 3: Strict Trade-off Optimization
+        with st.spinner("Stage 3/3: Finding best strict trade-off..."):
+            tradeoff_result = run_weighted_tradeoff_optimization(
+                model_1, model_2, independent_vars, bounds, start_points,
+                r_min_1, r_max_1, r_min_2, r_max_2,
+                weights, algorithm, algo_params
+            )
+            
             candidate_B = None
             if tradeoff_result.success:
                 candidate_B = {
@@ -220,7 +235,7 @@ def render_weighted_score_ui(formatted_models):
                     "outcome_2": objective_function(tradeoff_result.x, model_2, independent_vars)
                 }
             else:
-                st.warning("Could not find a best trade-off solution (Candidate B).")
+                st.warning("Could not find a valid trade-off solution within the strict constraints.")
 
         st.success("Multi-Objective Analysis Complete!")
         st.session_state.advanced_tradeoff_results = {
@@ -230,7 +245,6 @@ def render_weighted_score_ui(formatted_models):
             "model_2_name": model_2_name,
         }
         st.rerun()
-
 
 def render_classic_two_stage_ui(formatted_models):
     """Renders the UI for the restored classic two-stage optimization."""
