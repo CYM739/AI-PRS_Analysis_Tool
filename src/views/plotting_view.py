@@ -188,7 +188,7 @@ def render():
                     d_max = float(st.session_state.exp_df[var].max())
                     bounds.append((d_min, d_max))
 
-                # --- NEW APPEARANCE CONTROLS FOR PARETO ---
+                # --- APPEARANCE CONTROLS FOR PARETO ---
                 with st.expander("⚙️ Customize Plot Appearance", expanded=False):
                     st.write("**Simulation Settings**")
                     sample_size = st.slider("Number of Simulation Points", min_value=500, max_value=5000, value=2000, step=100, 
@@ -210,29 +210,70 @@ def render():
                 
                 with tab1:
                     st.markdown("#### Pareto Frontier")
-                    st.markdown("This plot simulates thousands of experiments to show the **feasible region** of outcomes. Points on the 'edge' represent the best possible trade-offs.")
-                    if st.button("Generate Pareto Plot"):
+                    st.markdown("Click points on the chart to see their exact details in the table below.")
+                    
+                    # 1. Generate/Refresh Button
+                    if st.button("Generate/Refresh Pareto Plot"):
                         with st.spinner(f"Sampling design space ({sample_size} points)..."):
-                            # Call logic function
-                            fig = plot_pareto_frontier(model_1, model_2, vars_, bounds, num_samples=sample_size)
+                            # Logic function must return (fig, df)
+                            fig, df = plot_pareto_frontier(model_1, model_2, vars_, bounds, num_samples=sample_size)
                             
-                            # Apply Custom Appearance Updates
-                            fig.update_layout(
+                            # Store in Session State to persist across interactions
+                            st.session_state.pareto_fig = fig
+                            st.session_state.pareto_data = df
+                            st.session_state.pareto_model_names = (m1_name, m2_name)
+
+                    # 2. Display Plot (if it exists in state)
+                    if 'pareto_fig' in st.session_state:
+                        # Check if models match current selection (to avoid stale plots)
+                        stored_m1, stored_m2 = st.session_state.get('pareto_model_names', (None, None))
+                        if stored_m1 == m1_name and stored_m2 == m2_name:
+                            
+                            # Apply Custom Appearance Updates (on the fly)
+                            current_fig = st.session_state.pareto_fig
+                            current_fig.update_layout(
                                 title=custom_pareto_title,
                                 xaxis_title=custom_x_label,
                                 yaxis_title=custom_y_label
                             )
-                            fig.update_traces(marker=dict(size=pt_size, opacity=pt_opacity))
-                            
-                            st.plotly_chart(fig, use_container_width=True)
-                            
+                            current_fig.update_traces(marker=dict(size=pt_size, opacity=pt_opacity))
+
+                            # RENDER WITH SELECTION ENABLED
+                            selection_event = st.plotly_chart(
+                                current_fig, 
+                                use_container_width=True, 
+                                on_select="rerun",  # Triggers rerun on click
+                                selection_mode="points", # Allows clicking points
+                                key="pareto_chart_select"
+                            )
+
+                            # 3. Handle Selection
+                            if selection_event and selection_event.selection.get("point_indices"):
+                                st.subheader("Selected Solutions")
+                                indices = selection_event.selection["point_indices"]
+                                
+                                # Retrieve rows from the stored dataframe
+                                selected_data = st.session_state.pareto_data.iloc[indices]
+                                
+                                # Clean up columns for display
+                                display_cols = ['Outcome 1', 'Outcome 2'] + vars_
+                                st.dataframe(selected_data[display_cols].style.format("{:.4f}"), use_container_width=True)
+                                
+                                # Optional: Download button
+                                csv = selected_data[display_cols].to_csv(index=False).encode('utf-8')
+                                st.download_button("Download Selected Points", csv, "selected_tradeoffs.csv", "text/csv")
+                            else:
+                                st.info("👆 Click on a dot in the chart above to see the recipe details here.")
+                        else:
+                            st.warning("Selections changed. Please click 'Generate/Refresh' to update the plot.")
+
                 with tab2:
                     st.markdown("#### Parallel Coordinates")
                     st.markdown("This plot connects inputs (Dosages) to outputs (Model Outcomes). Use it to trace which variable combinations lead to desired results.")
                     if st.button("Generate Parallel Coords"):
                         with st.spinner("Generating parallel coordinates (500 points)..."):
                             # Note: Parallel coords usually benefit from fewer points to be readable
-                            fig = plot_parallel_coordinates(model_1, model_2, vars_, bounds, num_samples=min(500, sample_size))
+                            fig, _ = plot_parallel_coordinates(model_1, model_2, vars_, bounds, num_samples=min(500, sample_size))
                             st.plotly_chart(fig, use_container_width=True)
 
         # --- PLOT TYPE 3: 2D LINE ANALYSIS (Original) ---
