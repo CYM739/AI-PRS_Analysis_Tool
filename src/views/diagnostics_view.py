@@ -99,6 +99,15 @@ def create_word_report(model_wrapper, model_name, dataframe, independent_vars):
         effective_vars = independent_vars if independent_vars else model_wrapper.independent_vars
         vif_df = calculate_vif(model_wrapper, dataframe=dataframe, independent_vars=effective_vars)
         
+        # --- FIX: ROBUST COLUMN HANDLING ---
+        # If 'Variable' is not a column, it is likely in the index or named something else.
+        if 'Variable' not in vif_df.columns:
+            vif_df = vif_df.reset_index()
+            # After reset, standardize the column names if we have exactly 2 columns (Name, Value)
+            if len(vif_df.columns) == 2:
+                vif_df.columns = ['Variable', 'VIF']
+        # -----------------------------------
+        
         table = doc.add_table(rows=1, cols=2)
         table.style = 'Table Grid'
         hdr_cells = table.rows[0].cells
