@@ -6,6 +6,9 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from scipy import stats
+import io
+from docx import Document  # Required for Word report generation
+
 from logic.diagnostics import (
     calculate_vif, 
     perform_normality_test, 
@@ -78,6 +81,79 @@ def apply_custom_layout(fig, height, width, title_size, axis_size, tick_size,
     fig.update_layout(**update_dict)
     return fig
 
+def create_word_report(model_wrapper, model_name, dataframe, independent_vars):
+    """Generates a Word document with OLS diagnostics."""
+    doc = Document()
+    doc.add_heading(f'Diagnostic Report: {model_name}', 0)
+    doc.add_paragraph(f"Generated on: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    # 1. Model Summary
+    doc.add_heading('1. Model Summary', level=1)
+    summary = model_wrapper.get_summary()
+    doc.add_paragraph(summary) 
+
+    # 2. VIF Analysis
+    doc.add_heading('2. Multicollinearity (VIF)', level=1)
+    try:
+        # Re-calculate VIF
+        effective_vars = independent_vars if independent_vars else model_wrapper.independent_vars
+        vif_df = calculate_vif(model_wrapper, dataframe=dataframe, independent_vars=effective_vars)
+        
+        table = doc.add_table(rows=1, cols=2)
+        table.style = 'Table Grid'
+        hdr_cells = table.rows[0].cells
+        hdr_cells[0].text = 'Variable'
+        hdr_cells[1].text = 'VIF Score'
+        
+        for _, row in vif_df.iterrows():
+            row_cells = table.add_row().cells
+            row_cells[0].text = str(row['Variable'])
+            row_cells[1].text = f"{row['VIF']:.4f}"
+    except Exception as e:
+        doc.add_paragraph(f"Could not perform VIF analysis: {e}")
+
+    # 3. Normality Test
+    doc.add_heading('3. Normality of Residuals', level=1)
+    try:
+        residuals = model_wrapper.model.resid
+        stat, p_val, test_name = perform_normality_test(residuals)
+        
+        p = doc.add_paragraph()
+        p.add_run(f"Test Performed: ").bold = True
+        p.add_run(f"{test_name}")
+        
+        p2 = doc.add_paragraph()
+        p2.add_run(f"P-Value: ").bold = True
+        p2.add_run(f"{p_val:.4f}")
+        
+        result_text = "Reject H0 (Residuals are likely NOT normal)" if p_val < 0.05 else "Fail to Reject H0 (Residuals appear normal)"
+        p3 = doc.add_paragraph()
+        p3.add_run("Conclusion: ").bold = True
+        p3.add_run(result_text)
+    except Exception as e:
+        doc.add_paragraph(f"Could not perform normality test: {e}")
+
+    # 4. Homoscedasticity
+    doc.add_heading('4. Homoscedasticity', level=1)
+    try:
+        lm_p = perform_heteroscedasticity_test(model_wrapper.model.resid, model_wrapper)
+        p = doc.add_paragraph()
+        p.add_run("Breusch-Pagan p-value: ").bold = True
+        p.add_run(f"{lm_p:.4f}")
+        
+        result_text = "Heteroscedasticity detected (Variance is not constant)" if lm_p < 0.05 else "Homoscedasticity indicated (Variance is constant)"
+        p2 = doc.add_paragraph()
+        p2.add_run("Conclusion: ").bold = True
+        p2.add_run(result_text)
+    except Exception as e:
+        doc.add_paragraph(f"Could not perform heteroscedasticity test: {e}")
+        
+    # Save to buffer
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer
+
 def render():
     st.subheader("🔍 OLS Assumption & Uncertainty Diagnostics")
     st.info("Evaluate statistical assumptions (Normality, VIF) and predictive uncertainty.")
@@ -136,12 +212,14 @@ def render():
     
     model_wrapper = ols_models[selected_model_name]
     
-    # Download Report Button
+    # Download Report Buttons
     with col_btn:
         st.write("") 
         st.write("") 
-        if st.button("📄 Report (This Model)"):
-             with st.spinner("Generating diagnostic report..."):
+        
+        # 1. Text Report (Original)
+        if st.button("📄 TXT Report (This Model)"):
+             with st.spinner("Generating text report..."):
                 report_text = generate_diagnostics_report(
                     model_wrapper, 
                     model_name=selected_model_name,
@@ -149,10 +227,26 @@ def render():
                     independent_vars=independent_vars
                 )
                 st.download_button(
-                    label="Download",
+                    label="Download TXT",
                     data=report_text,
                     file_name=f"diagnostics_report_{selected_model_name}.txt",
                     mime="text/plain"
+                )
+        
+        # 2. Word Report (New)
+        if st.button("📝 Word Report (This Model)"):
+            with st.spinner("Generating Word report..."):
+                docx_buffer = create_word_report(
+                    model_wrapper, 
+                    selected_model_name, 
+                    data_df, 
+                    independent_vars
+                )
+                st.download_button(
+                    label="Download DOCX",
+                    data=docx_buffer,
+                    file_name=f"diagnostics_report_{selected_model_name}.docx",
+                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 )
     
     # Extract data from the model wrapper
